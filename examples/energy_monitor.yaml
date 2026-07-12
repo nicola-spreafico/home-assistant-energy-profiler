@@ -1,0 +1,25 @@
+# Target config shape (ported from scripts/energy_monitor/config.jsonc)
+energy_monitor:
+  defaults:
+    energy_price: sensor.utenza_luce_energy_price_purchase
+    self_sufficiency_source: sensor.utenza_luce_selfsufficiency_score_instant
+    name_suffix: _em
+    live_update_interval: "00:15:00"
+    cycles: [daily, monthly, yearly]
+
+  devices:
+    # simple device (no cycle tracking)
+    - name: utenza_luce_consumo_generale
+      power: sensor.utenza_luce_consumo_power
+      energy: sensor.utenza_luce_consumo_total_active_energy
+
+    # power-threshold cycle + standby
+    - name: capanno_interno_casse_alimentazione
+      switch: switch.capanno_interno_casse_alimentazione
+      power: sensor.capanno_interno_casse_alimentazione_power
+      energy: sensor.capanno_interno_casse_alimentazione_energy
+      run:
+        trigger: power
+        on_above: 0
+        off_below: 1
+      standby: true
