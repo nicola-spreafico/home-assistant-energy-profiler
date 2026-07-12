@@ -1,5 +1,5 @@
 {
-  "name": "Energy Monitor",
+  "name": "Energy Insights Monitor",
   "homeassistant": "2024.1.0",
   "render_readme": true
 }

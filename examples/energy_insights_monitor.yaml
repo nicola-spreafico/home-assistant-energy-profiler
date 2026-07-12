@@ -1,5 +1,5 @@
 # Target config shape (ported from scripts/energy_monitor/config.jsonc)
-energy_monitor:
+energy_insights_monitor:
   defaults:
     energy_price: sensor.utenza_luce_energy_price_purchase
     self_sufficiency_source: sensor.utenza_luce_selfsufficiency_score_instant

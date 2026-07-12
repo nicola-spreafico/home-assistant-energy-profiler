@@ -17,7 +17,7 @@ try:
 except Exception as err:  # pragma: no cover - guarded by manifest dependency
     LeanUtilityMeterSensor = None
     _LOGGER.error(
-        "Energy Monitor requires the 'lean_utility_meter' integration; "
+        "Energy Insights Monitor requires the 'lean_utility_meter' integration; "
         "could not import its core (%s)", err,
     )
 

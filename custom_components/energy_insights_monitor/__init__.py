@@ -1,6 +1,6 @@
-"""The Energy Monitor integration.
+"""The Energy Insights Monitor integration.
 
-YAML-configured (no config flow): reads an `energy_monitor:` block with shared
+YAML-configured (no config flow): reads an `energy_insights_monitor:` block with shared
 `defaults` and a `devices` list, then creates, per device, the family of derived
 and cumulative sensors that the old `scripts/energy_monitor` generator used to
 render into static packages.
@@ -27,7 +27,7 @@ PLATFORMS = [Platform.SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up Energy Monitor from YAML."""
+    """Set up Energy Insights Monitor from YAML."""
     conf = config.get(DOMAIN)
     if not conf:
         return True
@@ -37,7 +37,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     # Resolve each device against the shared defaults into a fully-expanded spec.
     device_configs = [build_device_config(dev, defaults) for dev in devices]
-    _LOGGER.info("Energy Monitor: setting up %d device(s)", len(device_configs))
+    _LOGGER.info("Energy Insights Monitor: setting up %d device(s)", len(device_configs))
 
     hass.data[DOMAIN] = {"devices": device_configs}
 
@@ -47,6 +47,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         async_load_platform(hass, Platform.SENSOR, DOMAIN, {"devices": device_configs}, config)
     )
 
-    # TODO: register reload service (energy_monitor.reload) so devices can be
+    # TODO: register reload service (energy_insights_monitor.reload) so devices can be
     #       added/edited without a full HA restart.
     return True

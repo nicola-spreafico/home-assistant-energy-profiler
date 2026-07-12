@@ -19,5 +19,5 @@ async def async_setup_platform(hass, config, async_add_entities: AddEntitiesCall
     for device in discovery_info.get("devices", []):
         entities.extend(families.build_entities(hass, device))
 
-    _LOGGER.debug("Energy Monitor: adding %d entities", len(entities))
+    _LOGGER.debug("Energy Insights Monitor: adding %d entities", len(entities))
     async_add_entities(entities)

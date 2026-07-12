@@ -1,6 +1,6 @@
 {
-  "domain": "energy_monitor",
-  "name": "Energy Monitor",
+  "domain": "energy_insights_monitor",
+  "name": "Energy Insights Monitor",
   "after_dependencies": ["sensor"],
   "codeowners": ["@nicola-spreafico"],
   "config_flow": false,
