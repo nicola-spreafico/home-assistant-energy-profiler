@@ -5,9 +5,9 @@
   "codeowners": ["@nicola-spreafico"],
   "config_flow": false,
   "dependencies": ["recorder", "utility_meter", "lean_utility_meter"],
-  "documentation": "https://github.com/nicola-spreafico/home-assistant-energy-monitor",
+  "documentation": "https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/nicola-spreafico/home-assistant-energy-monitor/issues",
+  "issue_tracker": "https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/issues",
   "requirements": [],
   "version": "0.0.1"
 }
