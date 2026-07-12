@@ -84,9 +84,10 @@ DEVICE_SCHEMA = vol.Schema(
         vol.Required(CONF_POWER): cv.entity_id,
         vol.Required(CONF_ENERGY): cv.entity_id,
         vol.Optional(CONF_SWITCH): cv.entity_id,
-        # Per-device overrides of the shared defaults
-        vol.Optional(CONF_ENERGY_PRICE): cv.entity_id,
-        vol.Optional(CONF_SELF_SUFFICIENCY_SOURCE): cv.entity_id,
+        # Per-device overrides of the shared defaults. `null` explicitly opts the
+        # device out of the corresponding family even when a default is set.
+        vol.Optional(CONF_ENERGY_PRICE): vol.Any(None, cv.entity_id),
+        vol.Optional(CONF_SELF_SUFFICIENCY_SOURCE): vol.Any(None, cv.entity_id),
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_CYCLES): vol.All(cv.ensure_list, [CYCLE]),
         # Cycle tracking (optional): presence of `run` turns it on

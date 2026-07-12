@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Example: standby tracking
+# ─────────────────────────────────────────────────────────────────────────────
+# Tracks the energy (and its cost) a device draws while it is NOT running — the
+# "vampire" consumption between cycles. Because standby is defined relative to the
+# running state, it requires cycle tracking: a `run` block must be present too.
+#
+# NOTE: the standby family is DEFERRED (depends on the cycles family, also
+# deferred). The config below validates, but no standby entities are created yet.
+# When implemented it will add, per device:
+#   sensor.tv_em_standby_energy_lifetime / _{daily,monthly,yearly}   (kWh)
+#   sensor.tv_em_standby_energy_cost_lifetime / _{daily,monthly,yearly} (€)
+# ─────────────────────────────────────────────────────────────────────────────
+
+energy_insights_monitor:
+  defaults:
+    energy_price: sensor.energy_price_purchase
+    name_suffix: _em
+
+  devices:
+    - name: tv
+      power: sensor.tv_power
+      energy: sensor.tv_energy
+      run:                     # required: standby is measured while "off"
+        trigger: power
+        on_above: 15           # W — above this the TV is "on"
+        off_below: 10          # W — below this it is idling/standby
+      standby: true            # enable standby energy + cost tracking
