@@ -98,6 +98,12 @@ DEVICE_SCHEMA = vol.Schema(
     }
 )
 
+# The domain is a single dict: ONE global `defaults` block plus a `devices` list.
+# Splitting across package files works natively via HA's package merge: put
+# `defaults:` in exactly one file (it is the single global default for the whole
+# system) and spread `devices:` across as many files as you like — HA concatenates
+# the device lists into one and validates the merged whole (so a defaults-only file
+# and devices-only files are each fine on their own).
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
