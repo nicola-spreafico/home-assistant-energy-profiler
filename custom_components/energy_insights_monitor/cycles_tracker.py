@@ -100,6 +100,35 @@ class CycleEnergyAccumulatorSensor(_RestoreDecimal):
         self.async_write_ha_state()
 
 
+class CycleSumAccumulatorSensor(_RestoreDecimal):
+    """Total of a per-cycle quantity (e.g. cost €, from_self kWh) over all cycles.
+
+    Fed by the tracker with the per-cycle delta of a lifetime source; used to derive
+    the corresponding per-cycle mean.
+    """
+
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        slug: str,
+        unit: str,
+        device_class: SensorDeviceClass | None,
+        icon: str,
+        name: str | None = None,
+    ) -> None:
+        super().__init__(hass, slug=slug, icon=icon, name=name)
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = device_class
+
+    @callback
+    def add(self, delta: Decimal) -> None:
+        self._value += delta
+        self.async_write_ha_state()
+
+
 class MeanSensor(SensorEntity):
     """Per-completed-cycle mean: ``total / count`` (None until the first cycle)."""
 
@@ -200,6 +229,7 @@ class CycleTrackerSensor(_RestoreDecimal):
         energy_accumulator: CycleEnergyAccumulatorSensor,
         completed_energy: CompletedValueSensor,
         completed_duration: CompletedValueSensor,
+        extra_deltas: list[tuple[str, "CycleSumAccumulatorSensor"]] | None = None,
         icon: str = "mdi:counter",
         name: str | None = None,
     ) -> None:
@@ -210,6 +240,10 @@ class CycleTrackerSensor(_RestoreDecimal):
         self._energy_acc = energy_accumulator
         self._completed_energy = completed_energy
         self._completed_duration = completed_duration
+        # (source_entity, accumulator): the per-cycle delta of each source (cost,
+        # from_self, from_grid) is accumulated on cycle close, to derive their means.
+        self._extra = extra_deltas or []
+        self._extra_start: dict[str, float | None] = {}
         self._start_time = None
         self._start_energy: float | None = None
 
@@ -237,9 +271,13 @@ class CycleTrackerSensor(_RestoreDecimal):
         is_on = new_state.state == STATE_ON
 
         if is_on and not was_on:
-            # Cycle opens.
+            # Cycle opens: snapshot the baselines.
             self._start_time = dt_util.utcnow()
             self._start_energy = self._energy_now()
+            for source, _acc in self._extra:
+                self._extra_start[source] = _to_float(
+                    (s := self.hass.states.get(source)) and s.state
+                )
         elif was_on and not is_on and self._start_time is not None:
             # Cycle closes: measure and publish.
             duration = Decimal(str((dt_util.utcnow() - self._start_time).total_seconds()))
@@ -255,3 +293,10 @@ class CycleTrackerSensor(_RestoreDecimal):
                 self._completed_energy.set(energy)
                 self._energy_acc.add(energy)
             self._start_energy = None
+
+            # Per-cycle deltas of the extra sources (cost / from_self / from_grid).
+            for source, acc in self._extra:
+                current = _to_float((s := self.hass.states.get(source)) and s.state)
+                start = self._extra_start.get(source)
+                if current is not None and start is not None:
+                    acc.add(Decimal(str(max(0.0, current - start))))

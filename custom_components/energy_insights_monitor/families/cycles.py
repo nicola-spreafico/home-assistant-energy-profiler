@@ -44,11 +44,14 @@ def build(hass, device):
     from ..cycles_tracker import (
         CompletedValueSensor,
         CycleEnergyAccumulatorSensor,
+        CycleSumAccumulatorSensor,
         CycleTrackerSensor,
         DurationAccumulatorSensor,
         MeanSensor,
     )
+    from ..const import CONF_ENERGY_PRICE, CONF_SELF_SUFFICIENCY_SOURCE
     from ..lean import build_cycle_meters
+    from ..split import SelfSufficiencyRatioSensor
     from .energy import lifetime_entity_id
 
     prefix = device["prefix"]
@@ -70,6 +73,42 @@ def build(hass, device):
     energy_acc = CycleEnergyAccumulatorSensor(
         hass, slug=energy_total, icon="mdi:lightning-bolt-outline",
     )
+
+    # Optional per-cycle deltas of cost / self / grid, when those families exist.
+    extra_deltas: list[tuple[str, CycleSumAccumulatorSensor]] = []
+    extra_entities: list = []
+    price = device.get(CONF_ENERGY_PRICE)
+    has_self = device.get(CONF_SELF_SUFFICIENCY_SOURCE)
+
+    def _extra(name_suffix, source_lifetime, unit, device_class, icon):
+        acc = CycleSumAccumulatorSensor(
+            hass, slug=f"{prefix}_cycles_{name_suffix}_lifetime",
+            unit=unit, device_class=device_class, icon=icon,
+        )
+        extra_deltas.append((f"sensor.{prefix}_{source_lifetime}", acc))
+        extra_entities.append(acc)
+        extra_entities.append(
+            MeanSensor(
+                hass, slug=f"{prefix}_cycles_{name_suffix}_mean",
+                total_entity=acc.entity_id, count_entity=f"sensor.{count_lifetime}",
+                unit=unit, device_class=device_class, icon=icon,
+            )
+        )
+        return acc
+
+    if price:
+        _extra("cost", "energy_cost_lifetime", "€", SensorDeviceClass.MONETARY, "mdi:cash")
+    if has_self:
+        self_acc = _extra("energy_from_self", "energy_from_self_lifetime", "kWh", SensorDeviceClass.ENERGY, "mdi:solar-panel")
+        _extra("energy_from_grid", "energy_from_grid_lifetime", "kWh", SensorDeviceClass.ENERGY, "mdi:transmission-tower")
+        # Mean self-sufficiency over cycles = cycle from_self / cycle energy * 100.
+        extra_entities.append(
+            SelfSufficiencyRatioSensor(
+                hass, slug=f"{prefix}_cycles_self_sufficiency_mean",
+                numerator=self_acc.entity_id, denominator=f"sensor.{energy_total}",
+            )
+        )
+
     tracker = CycleTrackerSensor(
         hass,
         slug=count_lifetime,
@@ -79,6 +118,7 @@ def build(hass, device):
         energy_accumulator=energy_acc,
         completed_energy=completed_energy,
         completed_duration=completed_duration,
+        extra_deltas=extra_deltas,
     )
 
     # Per-completed-cycle means (total-so-far / cycles-so-far).
@@ -97,6 +137,7 @@ def build(hass, device):
         tracker, duration_acc, energy_acc, completed_energy, completed_duration,
         energy_mean, duration_mean,
     ]
+    entities += extra_entities
     # Cumulative -> Lean cycle meters give cycles-per-period and run-time-per-period.
     entities += build_cycle_meters(
         hass, device, source=f"sensor.{count_lifetime}",
