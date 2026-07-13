@@ -37,6 +37,7 @@ DEFAULT_NAME_SUFFIX = "_em"
 DEFAULT_CYCLES = ["daily", "monthly", "yearly"]
 
 # Feature families (mirror the generator's template folders)
+FAMILY_POWER = "power"
 FAMILY_ENERGY = "energy"
 FAMILY_COST = "cost"
 FAMILY_SELF_SUFFICIENCY = "self_sufficiency"

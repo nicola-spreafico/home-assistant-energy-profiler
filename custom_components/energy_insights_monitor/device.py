@@ -16,6 +16,7 @@ from .const import (
     CONF_NAME,
     CONF_RUN,
     CONF_STANDBY,
+    FAMILY_POWER,
     FAMILY_ENERGY,
     FAMILY_COST,
     FAMILY_SELF_SUFFICIENCY,
@@ -44,7 +45,7 @@ def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dic
 
 def _enabled_families(resolved: dict[str, Any]) -> list[str]:
     """Decide which entity families to build, from what the config declares."""
-    families = [FAMILY_ENERGY, FAMILY_COST]  # always on
+    families = [FAMILY_POWER, FAMILY_ENERGY, FAMILY_COST]  # always on
 
     # from_self / from_grid / savings / grid_cost + self-sufficiency %
     if resolved.get(CONF_SELF_SUFFICIENCY_SOURCE):

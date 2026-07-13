@@ -6,11 +6,12 @@ in device.py), which mirrors the old main.py render_* orchestration.
 """
 
 from ..const import (
-    FAMILY_ENERGY, FAMILY_COST, FAMILY_SELF_SUFFICIENCY, FAMILY_CYCLES, FAMILY_STANDBY,
+    FAMILY_POWER, FAMILY_ENERGY, FAMILY_COST, FAMILY_SELF_SUFFICIENCY, FAMILY_CYCLES, FAMILY_STANDBY,
 )
-from . import energy, cost, self_sufficiency, cycles, standby
+from . import power, energy, cost, self_sufficiency, cycles, standby
 
 _BUILDERS = {
+    FAMILY_POWER: power.build,
     FAMILY_ENERGY: energy.build,
     FAMILY_COST: cost.build,
     FAMILY_SELF_SUFFICIENCY: self_sufficiency.build,
