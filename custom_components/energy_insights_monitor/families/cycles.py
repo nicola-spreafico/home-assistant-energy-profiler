@@ -112,6 +112,7 @@ def build(hass, device):
     tracker = CycleTrackerSensor(
         hass,
         slug=count_lifetime,
+        device_prefix=prefix,
         running_entity=running_entity_id(prefix),
         energy_entity=lifetime_entity_id(prefix),
         duration_accumulator=duration_acc,

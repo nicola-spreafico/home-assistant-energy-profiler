@@ -33,6 +33,10 @@ _LOGGER = logging.getLogger(__name__)
 
 _INVALID = (None, STATE_UNAVAILABLE, STATE_UNKNOWN)
 
+# Fired on each completed cycle so users can automate notifications themselves
+# (the HA-idiomatic alternative to the old package's built-in notify action).
+EVENT_CYCLE_COMPLETED = "energy_insights_monitor_cycle_completed"
+
 
 def _to_float(value) -> float | None:
     if value in _INVALID:
@@ -223,6 +227,7 @@ class CycleTrackerSensor(_RestoreDecimal):
         hass: HomeAssistant,
         *,
         slug: str,
+        device_prefix: str,
         running_entity: str,
         energy_entity: str,
         duration_accumulator: DurationAccumulatorSensor,
@@ -234,6 +239,7 @@ class CycleTrackerSensor(_RestoreDecimal):
         name: str | None = None,
     ) -> None:
         super().__init__(hass, slug=slug, icon=icon, name=name)
+        self._device_prefix = device_prefix
         self._running_entity = running_entity
         self._energy_entity = energy_entity
         self._duration_acc = duration_accumulator
@@ -288,6 +294,7 @@ class CycleTrackerSensor(_RestoreDecimal):
             self.async_write_ha_state()
             self._duration_acc.add(duration)
             self._completed_duration.set(duration)
+            energy: Decimal | None = None
             if end_energy is not None and self._start_energy is not None:
                 energy = Decimal(str(max(0.0, end_energy - self._start_energy)))
                 self._completed_energy.set(energy)
@@ -300,3 +307,14 @@ class CycleTrackerSensor(_RestoreDecimal):
                 start = self._extra_start.get(source)
                 if current is not None and start is not None:
                     acc.add(Decimal(str(max(0.0, current - start))))
+
+            # Let users automate on completion (notifications, logging, ...).
+            self.hass.bus.async_fire(
+                EVENT_CYCLE_COMPLETED,
+                {
+                    "device": self._device_prefix,
+                    "energy_kwh": float(energy) if energy is not None else None,
+                    "duration_s": float(duration),
+                    "cycle_count": int(self._value),
+                },
+            )
