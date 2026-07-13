@@ -112,15 +112,26 @@ def build(hass, device):
             unit="€", device_class=SensorDeviceClass.MONETARY,
         )
 
-    # Live self-sufficiency % per cycle (from the Lean cycle meters directly).
-    for cycle in cycles:
-        entities.append(
-            SelfSufficiencyRatioSensor(
-                hass,
-                slug=f"{prefix}_energy_self_sufficiency_{cycle}",
-                numerator=f"sensor.{prefix}_energy_from_self_{cycle}",
-                denominator=f"sensor.{prefix}_energy_{cycle}",
-            )
+    # Self-sufficiency %: a live lifetime ratio, consolidated to one LTS point per
+    # cycle by Lean meters in absolute_values mode (they snapshot the % at each
+    # period close — the % is a gauge, not a cumulative total). net_consumption lets
+    # it move up and down. NOTE: the end-of-period snapshot timing for percentages is
+    # the item flagged for pilot validation.
+    ss_lifetime = f"{prefix}_energy_self_sufficiency_lifetime"
+    entities.append(
+        SelfSufficiencyRatioSensor(
+            hass,
+            slug=ss_lifetime,
+            numerator=f"sensor.{from_self_lifetime}",
+            denominator=lifetime_entity_id(prefix),
         )
+    )
+    entities += build_cycle_meters(
+        hass, device,
+        source=f"sensor.{ss_lifetime}",
+        name_suffix="energy_self_sufficiency",
+        unit="%", device_class=None,
+        net_consumption=True, absolute_values=True,
+    )
 
     return entities

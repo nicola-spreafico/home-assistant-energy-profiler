@@ -101,6 +101,11 @@ class EnergyCostIntegratorSensor(RestoreSensor):
     def native_value(self) -> Decimal:
         return self._total
 
+    async def async_reset(self) -> None:
+        """Zero the accumulated cost (reset entity service)."""
+        self._total = Decimal(0)
+        self.async_write_ha_state()
+
     @callback
     def _async_on_energy_change(self, event: Event) -> None:
         """Add the priced delta of the latest energy tick to the running total."""

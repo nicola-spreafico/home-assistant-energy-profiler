@@ -71,6 +71,11 @@ class PowerMaxSensor(RestoreSensor):
     def native_value(self) -> float:
         return self._max
 
+    async def async_reset(self) -> None:
+        """Zero the peak (reset entity service)."""
+        self._max = 0.0
+        self.async_write_ha_state()
+
     @callback
     def reset(self) -> None:
         """Reset the peak (used by the reset service)."""

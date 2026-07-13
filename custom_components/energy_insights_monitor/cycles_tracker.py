@@ -80,6 +80,11 @@ class _RestoreDecimal(RestoreSensor):
     def native_value(self) -> Decimal:
         return self._value
 
+    async def async_reset(self) -> None:
+        """Zero the accumulated value (reset entity service)."""
+        self._value = Decimal(0)
+        self.async_write_ha_state()
+
 
 class DurationAccumulatorSensor(_RestoreDecimal):
     """Total run time across all completed cycles (seconds), fed by the tracker."""
