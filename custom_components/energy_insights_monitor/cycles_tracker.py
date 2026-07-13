@@ -21,6 +21,7 @@ import logging
 from homeassistant.components.sensor import (
     RestoreSensor,
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
 from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -82,6 +83,78 @@ class DurationAccumulatorSensor(_RestoreDecimal):
         self.async_write_ha_state()
 
 
+class CycleEnergyAccumulatorSensor(_RestoreDecimal):
+    """Total energy consumed across all completed cycles (kWh), fed by the tracker.
+
+    Only used to derive the per-cycle energy mean; not exposed per-period (the old
+    generator tracked cycle energy only through the mean, not as a period meter).
+    """
+
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = "kWh"
+
+    @callback
+    def add(self, kwh: Decimal) -> None:
+        self._value += kwh
+        self.async_write_ha_state()
+
+
+class MeanSensor(SensorEntity):
+    """Per-completed-cycle mean: ``total / count`` (None until the first cycle)."""
+
+    _attr_should_poll = False
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        slug: str,
+        total_entity: str,
+        count_entity: str,
+        unit: str,
+        device_class: SensorDeviceClass | None,
+        icon: str,
+        name: str | None = None,
+    ) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = device_class
+        self._total_entity = total_entity
+        self._count_entity = count_entity
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, [self._total_entity, self._count_entity], self._on_change
+            )
+        )
+
+    @callback
+    def _on_change(self, event: Event) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        total = _to_float((s := self.hass.states.get(self._total_entity)) and s.state)
+        count = _to_float((s := self.hass.states.get(self._count_entity)) and s.state)
+        if total is None or count is None or count <= 0:
+            self._attr_available = False
+            self._attr_native_value = None
+            return
+        self._attr_available = True
+        self._attr_native_value = round(total / count, 3)
+
+
 class CompletedValueSensor(_RestoreDecimal):
     """The last completed cycle's value (energy or duration), updated on cycle end."""
 
@@ -124,6 +197,7 @@ class CycleTrackerSensor(_RestoreDecimal):
         running_entity: str,
         energy_entity: str,
         duration_accumulator: DurationAccumulatorSensor,
+        energy_accumulator: CycleEnergyAccumulatorSensor,
         completed_energy: CompletedValueSensor,
         completed_duration: CompletedValueSensor,
         icon: str = "mdi:counter",
@@ -133,6 +207,7 @@ class CycleTrackerSensor(_RestoreDecimal):
         self._running_entity = running_entity
         self._energy_entity = energy_entity
         self._duration_acc = duration_accumulator
+        self._energy_acc = energy_accumulator
         self._completed_energy = completed_energy
         self._completed_duration = completed_duration
         self._start_time = None
@@ -178,4 +253,5 @@ class CycleTrackerSensor(_RestoreDecimal):
             if end_energy is not None and self._start_energy is not None:
                 energy = Decimal(str(max(0.0, end_energy - self._start_energy)))
                 self._completed_energy.set(energy)
+                self._energy_acc.add(energy)
             self._start_energy = None

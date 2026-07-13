@@ -43,8 +43,10 @@ def build(hass, device):
 
     from ..cycles_tracker import (
         CompletedValueSensor,
+        CycleEnergyAccumulatorSensor,
         CycleTrackerSensor,
         DurationAccumulatorSensor,
+        MeanSensor,
     )
     from ..lean import build_cycle_meters
     from .energy import lifetime_entity_id
@@ -52,6 +54,7 @@ def build(hass, device):
     prefix = device["prefix"]
     count_lifetime = f"{prefix}_cycles_count_lifetime"
     duration_lifetime = f"{prefix}_cycles_duration_lifetime"
+    energy_total = f"{prefix}_cycles_energy_lifetime"
 
     completed_energy = CompletedValueSensor(
         hass, slug=f"{prefix}_cycle_completed_energy",
@@ -64,17 +67,36 @@ def build(hass, device):
     duration_acc = DurationAccumulatorSensor(
         hass, slug=duration_lifetime, icon="mdi:timer-sand",
     )
+    energy_acc = CycleEnergyAccumulatorSensor(
+        hass, slug=energy_total, icon="mdi:lightning-bolt-outline",
+    )
     tracker = CycleTrackerSensor(
         hass,
         slug=count_lifetime,
         running_entity=running_entity_id(prefix),
         energy_entity=lifetime_entity_id(prefix),
         duration_accumulator=duration_acc,
+        energy_accumulator=energy_acc,
         completed_energy=completed_energy,
         completed_duration=completed_duration,
     )
 
-    entities = [tracker, duration_acc, completed_energy, completed_duration]
+    # Per-completed-cycle means (total-so-far / cycles-so-far).
+    energy_mean = MeanSensor(
+        hass, slug=f"{prefix}_cycles_energy_mean",
+        total_entity=f"sensor.{energy_total}", count_entity=f"sensor.{count_lifetime}",
+        unit="kWh", device_class=SensorDeviceClass.ENERGY, icon="mdi:lightning-bolt",
+    )
+    duration_mean = MeanSensor(
+        hass, slug=f"{prefix}_cycles_duration_mean",
+        total_entity=f"sensor.{duration_lifetime}", count_entity=f"sensor.{count_lifetime}",
+        unit="s", device_class=SensorDeviceClass.DURATION, icon="mdi:timer-outline",
+    )
+
+    entities = [
+        tracker, duration_acc, energy_acc, completed_energy, completed_duration,
+        energy_mean, duration_mean,
+    ]
     # Cumulative -> Lean cycle meters give cycles-per-period and run-time-per-period.
     entities += build_cycle_meters(
         hass, device, source=f"sensor.{count_lifetime}",
