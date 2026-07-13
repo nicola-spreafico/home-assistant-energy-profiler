@@ -16,8 +16,9 @@ import logging
 
 from homeassistant.components.sensor import SensorDeviceClass
 
-from ..const import CONF_ENERGY, CONF_ENERGY_PRICE
+from ..const import CONF_ENERGY, CONF_ENERGY_PRICE, CONF_POWER
 from ..integrator import EnergyCostIntegratorSensor
+from ..instant import INSTANT_COST_VARIANTS, InstantCostSensor
 from ..lean import build_cycle_meters
 from .energy import lifetime_entity_id
 
@@ -56,4 +57,17 @@ def build(hass, device):
             device_class=SensorDeviceClass.MONETARY,
         )
     )
+
+    # Instantaneous cost-rate projections (basics_004): power * price extrapolated.
+    for suffix, unit, factor in INSTANT_COST_VARIANTS:
+        entities.append(
+            InstantCostSensor(
+                hass,
+                slug=f"{prefix}_energy_cost_instant_{suffix}",
+                power_source=device[CONF_POWER],
+                price_source=price,
+                factor=factor,
+                unit=unit,
+            )
+        )
     return entities
