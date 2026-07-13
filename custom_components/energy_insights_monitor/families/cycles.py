@@ -1,18 +1,15 @@
-"""Family: cycles.
+"""Family: cycles — appliance run-cycle tracking and analytics.
 
-Replaces the generator's ``003_cycles`` fragments: a run-detection state machine
-(binary_sensor ``_running`` from a power threshold or a custom template), cycle
-start/stop snapshots, per-cycle live energy/cost, a completed-cycle counter with
-min/max duration+energy limits, and an optional completion notification.
+Replaces the whole ``003_cycles`` folder:
+- ``_running`` gatekeeper (binary sensor, ``build_binary_sensors``);
+- start/stop snapshots, validation against min/max limits;
+- per-metric completed values, live (in-progress) values and means, for energy and
+  (when the families exist) cost, from_self, from_grid, savings, grid_cost;
+- count and duration, exposed per-period via Lean meters;
+- ``cycle_completed`` / ``cycle_discarded`` events for user automations.
 
-IMPLEMENTED so far: the run-detection ``_running`` binary sensor (the gatekeeper
-every other cycle/standby feature keys off).
-
-DEFERRED (out of the first migration wave, per the plan): the rest of the family —
-cycle start/stop snapshots, per-cycle live energy/cost, completed-cycle counters
-with min/max duration+energy limits, means and the completion notification. Those
-are counters/durations/event automations rather than cumulative energy, so they do
-not benefit from the Lean consolidation and are migrated separately.
+Not ported (niche): ``costovertime``, ``cycle_completed_start/stop`` (covered by the
+snapshot timestamps) and ``cycles_duration_summary_human`` (a formatting sensor).
 """
 
 from ..const import (
@@ -25,6 +22,9 @@ from ..const import (
     CONF_OFF_DELAY,
     CONF_AVAILABLE,
     CONF_STATE,
+    CONF_LIMITS,
+    CONF_ENERGY_PRICE,
+    CONF_SELF_SUFFICIENCY_SOURCE,
 )
 
 
@@ -34,120 +34,131 @@ def running_entity_id(prefix: str) -> str:
 
 
 def build(hass, device):
-    """Sensor-platform entities for cycles: count + duration (Lean-backed) and the
-    last-completed snapshots. Means and the completion notification are deferred."""
-    if not device.get(CONF_RUN):
+    """All sensor-platform cycle entities (snapshots, completed, live, means, meters)."""
+    run = device.get(CONF_RUN)
+    if not run:
         return []
 
     from homeassistant.components.sensor import SensorDeviceClass
 
     from ..cycles_tracker import (
         CompletedValueSensor,
-        CycleEnergyAccumulatorSensor,
+        CycleLiveDurationSensor,
+        CycleLiveSensor,
+        CycleSnapshotSensor,
         CycleSumAccumulatorSensor,
         CycleTrackerSensor,
+        CycleValidationSensor,
         DurationAccumulatorSensor,
         MeanSensor,
     )
-    from ..const import CONF_ENERGY_PRICE, CONF_SELF_SUFFICIENCY_SOURCE
     from ..lean import build_cycle_meters
     from ..split import SelfSufficiencyRatioSensor
-    from .energy import lifetime_entity_id
 
     prefix = device["prefix"]
+    running = running_entity_id(prefix)
     count_lifetime = f"{prefix}_cycles_count_lifetime"
     duration_lifetime = f"{prefix}_cycles_duration_lifetime"
-    energy_total = f"{prefix}_cycles_energy_lifetime"
+    ENERGY = SensorDeviceClass.ENERGY
+    MONEY = SensorDeviceClass.MONETARY
+    DURATION = SensorDeviceClass.DURATION
 
-    completed_energy = CompletedValueSensor(
-        hass, slug=f"{prefix}_cycle_completed_energy",
-        unit="kWh", device_class=SensorDeviceClass.ENERGY, icon="mdi:lightning-bolt",
-    )
-    completed_duration = CompletedValueSensor(
-        hass, slug=f"{prefix}_cycle_completed_duration",
-        unit="s", device_class=SensorDeviceClass.DURATION, icon="mdi:timer-outline",
-    )
-    duration_acc = DurationAccumulatorSensor(
-        hass, slug=duration_lifetime, icon="mdi:timer-sand",
-    )
-    energy_acc = CycleEnergyAccumulatorSensor(
-        hass, slug=energy_total, icon="mdi:lightning-bolt-outline",
-    )
-
-    # Optional per-cycle deltas of cost / self / grid, when those families exist.
-    extra_deltas: list[tuple[str, CycleSumAccumulatorSensor]] = []
-    extra_entities: list = []
     price = device.get(CONF_ENERGY_PRICE)
     has_self = device.get(CONF_SELF_SUFFICIENCY_SOURCE)
 
-    def _extra(name_suffix, source_lifetime, unit, device_class, icon):
-        acc = CycleSumAccumulatorSensor(
-            hass, slug=f"{prefix}_cycles_{name_suffix}_lifetime",
-            unit=unit, device_class=device_class, icon=icon,
-        )
-        extra_deltas.append((f"sensor.{prefix}_{source_lifetime}", acc))
-        extra_entities.append(acc)
-        extra_entities.append(
-            MeanSensor(
-                hass, slug=f"{prefix}_cycles_{name_suffix}_mean",
-                total_entity=acc.entity_id, count_entity=f"sensor.{count_lifetime}",
-                unit=unit, device_class=device_class, icon=icon,
-            )
-        )
-        return acc
+    # Snapshots + validation status.
+    start_snap = CycleSnapshotSensor(hass, slug=f"{prefix}_cycle_start_snapshot", icon="mdi:timer-marker-outline")
+    stop_snap = CycleSnapshotSensor(hass, slug=f"{prefix}_cycle_stop_snapshot", icon="mdi:timer-marker-outline")
+    validation = CycleValidationSensor(hass, slug=f"{prefix}_cycle_validation_status")
+    entities = [start_snap, stop_snap, validation]
 
-    if price:
-        _extra("cost", "energy_cost_lifetime", "€", SensorDeviceClass.MONETARY, "mdi:cash")
-    if has_self:
-        self_acc = _extra("energy_from_self", "energy_from_self_lifetime", "kWh", SensorDeviceClass.ENERGY, "mdi:solar-panel")
-        _extra("energy_from_grid", "energy_from_grid_lifetime", "kWh", SensorDeviceClass.ENERGY, "mdi:transmission-tower")
-        # Mean self-sufficiency over cycles = cycle from_self / cycle energy * 100.
-        extra_entities.append(
-            SelfSufficiencyRatioSensor(
-                hass, slug=f"{prefix}_cycles_self_sufficiency_mean",
-                numerator=self_acc.entity_id, denominator=f"sensor.{energy_total}",
-            )
+    # Metrics: (name, source lifetime, completed, mean, accumulator, live) — energy
+    # always, the rest gated on the cost / self-sufficiency families existing.
+    metrics: list = []
+
+    def metric(name, source_slug, completed_slug, mean_slug, acc_slug, live_slug, unit, dc, icon):
+        completed = CompletedValueSensor(hass, slug=completed_slug, unit=unit, device_class=dc, icon=icon)
+        acc = CycleSumAccumulatorSensor(hass, slug=acc_slug, unit=unit, device_class=dc, icon=icon)
+        mean = MeanSensor(
+            hass, slug=mean_slug, total_entity=acc.entity_id,
+            count_entity=f"sensor.{count_lifetime}", unit=unit, device_class=dc, icon=icon,
         )
+        live = CycleLiveSensor(
+            hass, slug=live_slug, source_entity=f"sensor.{source_slug}",
+            snapshot_entity=start_snap.entity_id, initial_attr=f"initial_{name}",
+            running_entity=running, unit=unit, device_class=dc, icon=icon,
+        )
+        metrics.append((name, f"sensor.{source_slug}", completed, acc))
+        entities.extend([completed, acc, mean, live])
+
+    metric("energy", f"{prefix}_energy_lifetime", f"{prefix}_cycle_completed_energy",
+           f"{prefix}_cycles_energy_mean", f"{prefix}_cycles_energy_lifetime",
+           f"{prefix}_cycle_live_energy", "kWh", ENERGY, "mdi:lightning-bolt")
+    if price:
+        metric("cost", f"{prefix}_energy_cost_lifetime", f"{prefix}_cycle_completed_cost",
+               f"{prefix}_cycles_cost_mean", f"{prefix}_cycles_cost_lifetime",
+               f"{prefix}_cycle_live_cost", "€", MONEY, "mdi:cash")
+    if has_self:
+        metric("from_self", f"{prefix}_energy_from_self_lifetime", f"{prefix}_cycle_completed_energy_from_self",
+               f"{prefix}_cycles_energy_from_self_mean", f"{prefix}_cycles_energy_from_self_lifetime",
+               f"{prefix}_cycle_live_energy_from_self", "kWh", ENERGY, "mdi:solar-panel")
+        metric("from_grid", f"{prefix}_energy_from_grid_lifetime", f"{prefix}_cycle_completed_energy_from_grid",
+               f"{prefix}_cycles_energy_from_grid_mean", f"{prefix}_cycles_energy_from_grid_lifetime",
+               f"{prefix}_cycle_live_energy_from_grid", "kWh", ENERGY, "mdi:transmission-tower")
+    if price and has_self:
+        metric("savings", f"{prefix}_energy_from_grid_savings_lifetime", f"{prefix}_cycle_completed_energy_from_grid_savings",
+               f"{prefix}_cycles_energy_from_grid_savings_mean", f"{prefix}_cycles_energy_from_grid_savings_lifetime",
+               f"{prefix}_cycle_live_savings_from_grid", "€", MONEY, "mdi:piggy-bank")
+        metric("grid_cost", f"{prefix}_energy_from_grid_cost_lifetime", f"{prefix}_cycle_completed_energy_from_grid_cost",
+               f"{prefix}_cycles_energy_from_grid_cost_mean", f"{prefix}_cycles_energy_from_grid_cost_lifetime",
+               f"{prefix}_cycle_live_cost_from_grid", "€", MONEY, "mdi:cash-minus")
+
+    # Duration (special: measured from the boundary timestamps, not a source delta).
+    duration_acc = DurationAccumulatorSensor(hass, slug=duration_lifetime, icon="mdi:timer-sand")
+    completed_duration = CompletedValueSensor(hass, slug=f"{prefix}_cycle_completed_duration", unit="s", device_class=DURATION, icon="mdi:timer-outline")
+    duration_mean = MeanSensor(hass, slug=f"{prefix}_cycles_duration_mean", total_entity=duration_acc.entity_id, count_entity=f"sensor.{count_lifetime}", unit="s", device_class=DURATION, icon="mdi:timer-outline")
+    live_duration = CycleLiveDurationSensor(hass, slug=f"{prefix}_cycle_live_duration", start_snapshot=start_snap.entity_id, running_entity=running)
+    entities += [duration_acc, completed_duration, duration_mean, live_duration]
+
+    # Self-sufficiency % (completed + mean over cycles + live), when applicable.
+    completed_ss = None
+    if has_self:
+        completed_ss = CompletedValueSensor(hass, slug=f"{prefix}_cycle_completed_self_sufficiency", unit="%", device_class=None, icon="mdi:solar-power-variant")
+        entities += [
+            completed_ss,
+            SelfSufficiencyRatioSensor(
+                hass, slug=f"{prefix}_cycles_self_sufficiency_percentage_mean",
+                numerator=f"sensor.{prefix}_cycles_energy_from_self_lifetime",
+                denominator=f"sensor.{prefix}_cycles_energy_lifetime",
+            ),
+            SelfSufficiencyRatioSensor(
+                hass, slug=f"{prefix}_cycle_live_self_sufficiency",
+                numerator=f"sensor.{prefix}_cycle_live_energy_from_self",
+                denominator=f"sensor.{prefix}_cycle_live_energy",
+            ),
+        ]
 
     tracker = CycleTrackerSensor(
         hass,
         slug=count_lifetime,
         device_prefix=prefix,
-        running_entity=running_entity_id(prefix),
-        energy_entity=lifetime_entity_id(prefix),
+        running_entity=running,
+        metrics=metrics,
         duration_accumulator=duration_acc,
-        energy_accumulator=energy_acc,
-        completed_energy=completed_energy,
         completed_duration=completed_duration,
-        extra_deltas=extra_deltas,
+        start_snapshot=start_snap,
+        stop_snapshot=stop_snap,
+        validation=validation,
+        limits=device.get(CONF_LIMITS) or {},
+        on_delay=run.get(CONF_ON_DELAY),
+        off_delay=run.get(CONF_OFF_DELAY),
+        completed_self_sufficiency=completed_ss,
     )
+    entities.append(tracker)
 
-    # Per-completed-cycle means (total-so-far / cycles-so-far).
-    energy_mean = MeanSensor(
-        hass, slug=f"{prefix}_cycles_energy_mean",
-        total_entity=f"sensor.{energy_total}", count_entity=f"sensor.{count_lifetime}",
-        unit="kWh", device_class=SensorDeviceClass.ENERGY, icon="mdi:lightning-bolt",
-    )
-    duration_mean = MeanSensor(
-        hass, slug=f"{prefix}_cycles_duration_mean",
-        total_entity=f"sensor.{duration_lifetime}", count_entity=f"sensor.{count_lifetime}",
-        unit="s", device_class=SensorDeviceClass.DURATION, icon="mdi:timer-outline",
-    )
-
-    entities = [
-        tracker, duration_acc, energy_acc, completed_energy, completed_duration,
-        energy_mean, duration_mean,
-    ]
-    entities += extra_entities
-    # Cumulative -> Lean cycle meters give cycles-per-period and run-time-per-period.
-    entities += build_cycle_meters(
-        hass, device, source=f"sensor.{count_lifetime}",
-        name_suffix="cycles_count", unit=None, device_class=None,
-    )
-    entities += build_cycle_meters(
-        hass, device, source=f"sensor.{duration_lifetime}",
-        name_suffix="cycles_duration", unit="s", device_class=SensorDeviceClass.DURATION,
-    )
+    # Cumulative count / duration -> Lean per-period meters.
+    entities += build_cycle_meters(hass, device, source=f"sensor.{count_lifetime}", name_suffix="cycles_count", unit=None, device_class=None)
+    entities += build_cycle_meters(hass, device, source=f"sensor.{duration_lifetime}", name_suffix="cycles_duration", unit="s", device_class=DURATION)
     return entities
 
 
@@ -157,8 +168,6 @@ def build_binary_sensors(hass, device):
     if not run:
         return []
 
-    # Imported lazily: the binary_sensor platform module imports this package, and
-    # importing it at module load would create a cycle through families/__init__.
     from ..binary_sensor import PowerRunningBinarySensor, TemplateRunningBinarySensor
 
     prefix = device["prefix"]
@@ -177,7 +186,6 @@ def build_binary_sensors(hass, device):
             )
         ]
 
-    # trigger: template
     return [
         TemplateRunningBinarySensor(
             hass,
