@@ -20,10 +20,21 @@ _BUILDERS = {
 
 
 def build_entities(hass, device):
-    """Return all entities for a device across its enabled families."""
+    """Return all sensor-platform entities for a device across its enabled families."""
     entities = []
     for family in device.get("families", []):
         builder = _BUILDERS.get(family)
         if builder:
             entities.extend(builder(hass, device))
     return entities
+
+
+def build_binary_sensors(hass, device):
+    """Return all binary_sensor-platform entities for a device.
+
+    Only the cycles family contributes binary sensors so far (the ``_running``
+    gatekeeper), and only when the device declares a ``run`` block.
+    """
+    if FAMILY_CYCLES not in device.get("families", []):
+        return []
+    return cycles.build_binary_sensors(hass, device)

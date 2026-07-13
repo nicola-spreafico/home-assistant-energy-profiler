@@ -23,7 +23,7 @@ from .device import build_device_config
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -41,11 +41,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.data[DOMAIN] = {"devices": device_configs}
 
-    # Forward the resolved specs to the sensor platform, which instantiates the
-    # per-family entities for every device.
-    hass.async_create_task(
-        async_load_platform(hass, Platform.SENSOR, DOMAIN, {"devices": device_configs}, config)
-    )
+    # Forward the resolved specs to each platform, which instantiates the per-family
+    # entities for every device (sensors for the meters, binary_sensors for run state).
+    for platform in PLATFORMS:
+        hass.async_create_task(
+            async_load_platform(hass, platform, DOMAIN, {"devices": device_configs}, config)
+        )
 
     # TODO: register reload service (energy_insights_monitor.reload) so devices can be
     #       added/edited without a full HA restart.
