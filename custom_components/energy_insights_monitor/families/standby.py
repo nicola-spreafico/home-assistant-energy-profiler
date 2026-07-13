@@ -41,6 +41,8 @@ def build(hass, device):
     price = device.get(CONF_ENERGY_PRICE)
     standby_lifetime = f"{prefix}_standby_energy_lifetime"
 
+    from ..cycles_tracker import StandbyDurationSensor
+
     entities = [
         StandbyEnergyAccumulator(
             hass,
@@ -48,7 +50,10 @@ def build(hass, device):
             # Gate the decoupled lifetime's deltas on the running state.
             energy_source=lifetime_entity_id(prefix),
             running_entity=running_entity_id(prefix),
-        )
+        ),
+        StandbyDurationSensor(
+            hass, slug=f"{prefix}_standby_duration", running_entity=running_entity_id(prefix),
+        ),
     ]
     entities += build_cycle_meters(
         hass, device,

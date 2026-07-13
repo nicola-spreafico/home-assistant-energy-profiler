@@ -200,6 +200,91 @@ class MeanSensor(SensorEntity):
         self._attr_native_value = round(total / count, 3)
 
 
+class ScaledRatioSensor(SensorEntity):
+    """``numerator / denominator * scale`` (e.g. cost per hour: €total / s * 3600)."""
+
+    _attr_should_poll = False
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self, hass: HomeAssistant, *, slug: str, numerator: str, denominator: str,
+        scale: float, unit: str, icon: str, name: str | None = None,
+    ) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._attr_native_unit_of_measurement = unit
+        self._num = numerator
+        self._den = denominator
+        self._scale = scale
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, [self._num, self._den], self._on_change)
+        )
+
+    @callback
+    def _on_change(self, event: Event) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        num = _to_float((s := self.hass.states.get(self._num)) and s.state)
+        den = _to_float((s := self.hass.states.get(self._den)) and s.state)
+        if num is None or den is None or den <= 0:
+            self._attr_available = False
+            self._attr_native_value = None
+            return
+        self._attr_available = True
+        self._attr_native_value = round(num / den * self._scale, 3)
+
+
+class HumanDurationSensor(SensorEntity):
+    """A human-readable formatting of a seconds-valued source (``2h 05m``)."""
+
+    _attr_should_poll = False
+    _attr_icon = "mdi:timer-outline"
+
+    def __init__(
+        self, hass: HomeAssistant, *, slug: str, seconds_source: str, name: str | None = None,
+    ) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._source = seconds_source
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, [self._source], self._on_change)
+        )
+
+    @callback
+    def _on_change(self, event: Event) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        secs = _to_float((s := self.hass.states.get(self._source)) and s.state)
+        if secs is None:
+            self._attr_native_value = None
+            return
+        total = int(secs)
+        h, rem = divmod(total, 3600)
+        m, s = divmod(rem, 60)
+        self._attr_native_value = f"{h}h {m:02d}m" if h else f"{m}m {s:02d}s"
+
+
 class CompletedValueSensor(_RestoreDecimal):
     """The last completed cycle's value (energy or duration), updated on cycle end."""
 
@@ -378,6 +463,61 @@ class CycleLiveDurationSensor(SensorEntity):
         self._attr_native_value = (
             round(max(0.0, (dt_util.utcnow() - start).total_seconds()), 1) if start else 0.0
         )
+
+
+class StandbyDurationSensor(SensorEntity):
+    """Time the device has been idle since it last stopped (s); 0 while running.
+
+    Reincarnates ``004_standby/standby_001_[live]``.
+    """
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "s"
+    _attr_icon = "mdi:power-sleep"
+
+    def __init__(self, hass: HomeAssistant, *, slug: str, running_entity: str, name: str | None = None) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._running = running_entity
+        self._off_since = None
+        self._attr_native_value = 0.0
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if not self.hass.states.is_state(self._running, STATE_ON):
+            self._off_since = dt_util.utcnow()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, [self._running], self._on_running)
+        )
+        self.async_on_remove(
+            async_track_time_interval(self.hass, self._tick, timedelta(seconds=10))
+        )
+
+    @callback
+    def _on_running(self, event: Event) -> None:
+        new_state = event.data.get("new_state")
+        if new_state is None:
+            return
+        self._off_since = None if new_state.state == STATE_ON else dt_util.utcnow()
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _tick(self, _now) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        if self._off_since is None or self.hass.states.is_state(self._running, STATE_ON):
+            self._attr_native_value = 0.0
+            return
+        self._attr_native_value = round(max(0.0, (dt_util.utcnow() - self._off_since).total_seconds()), 1)
 
 
 def _validate(duration_s: float, energy: float | None, limits: dict) -> tuple[bool, str]:

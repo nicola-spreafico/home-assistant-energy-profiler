@@ -50,7 +50,9 @@ def build(hass, device):
         CycleTrackerSensor,
         CycleValidationSensor,
         DurationAccumulatorSensor,
+        HumanDurationSensor,
         MeanSensor,
+        ScaledRatioSensor,
     )
     from ..lean import build_cycle_meters
     from ..split import SelfSufficiencyRatioSensor
@@ -138,6 +140,23 @@ def build(hass, device):
             ),
         ]
 
+    # Cost-over-time (€/h): completed value + mean over cycles (only when priced).
+    completed_cot = None
+    if price:
+        completed_cot = CompletedValueSensor(hass, slug=f"{prefix}_cycle_completed_costovertime", unit="€/h", device_class=None, icon="mdi:cash-clock")
+        entities += [
+            completed_cot,
+            ScaledRatioSensor(
+                hass, slug=f"{prefix}_cycles_costovertime_mean",
+                numerator=f"sensor.{prefix}_cycles_cost_lifetime",
+                denominator=f"sensor.{duration_lifetime}", scale=3600, unit="€/h", icon="mdi:cash-clock",
+            ),
+        ]
+    # Human-readable total run time.
+    entities.append(
+        HumanDurationSensor(hass, slug=f"{prefix}_cycles_duration_summary_human", seconds_source=f"sensor.{duration_lifetime}")
+    )
+
     tracker = CycleTrackerSensor(
         hass,
         slug=count_lifetime,
@@ -153,6 +172,7 @@ def build(hass, device):
         on_delay=run.get(CONF_ON_DELAY),
         off_delay=run.get(CONF_OFF_DELAY),
         completed_self_sufficiency=completed_ss,
+        completed_costovertime=completed_cot,
     )
     entities.append(tracker)
 
