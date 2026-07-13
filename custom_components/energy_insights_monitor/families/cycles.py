@@ -34,8 +34,57 @@ def running_entity_id(prefix: str) -> str:
 
 
 def build(hass, device):
-    """Sensor-platform entities for cycles. Deferred (counters/durations/means)."""
-    return []
+    """Sensor-platform entities for cycles: count + duration (Lean-backed) and the
+    last-completed snapshots. Means and the completion notification are deferred."""
+    if not device.get(CONF_RUN):
+        return []
+
+    from homeassistant.components.sensor import SensorDeviceClass
+
+    from ..cycles_tracker import (
+        CompletedValueSensor,
+        CycleTrackerSensor,
+        DurationAccumulatorSensor,
+    )
+    from ..lean import build_cycle_meters
+    from .energy import lifetime_entity_id
+
+    prefix = device["prefix"]
+    count_lifetime = f"{prefix}_cycles_count_lifetime"
+    duration_lifetime = f"{prefix}_cycles_duration_lifetime"
+
+    completed_energy = CompletedValueSensor(
+        hass, slug=f"{prefix}_cycle_completed_energy",
+        unit="kWh", device_class=SensorDeviceClass.ENERGY, icon="mdi:lightning-bolt",
+    )
+    completed_duration = CompletedValueSensor(
+        hass, slug=f"{prefix}_cycle_completed_duration",
+        unit="s", device_class=SensorDeviceClass.DURATION, icon="mdi:timer-outline",
+    )
+    duration_acc = DurationAccumulatorSensor(
+        hass, slug=duration_lifetime, icon="mdi:timer-sand",
+    )
+    tracker = CycleTrackerSensor(
+        hass,
+        slug=count_lifetime,
+        running_entity=running_entity_id(prefix),
+        energy_entity=lifetime_entity_id(prefix),
+        duration_accumulator=duration_acc,
+        completed_energy=completed_energy,
+        completed_duration=completed_duration,
+    )
+
+    entities = [tracker, duration_acc, completed_energy, completed_duration]
+    # Cumulative -> Lean cycle meters give cycles-per-period and run-time-per-period.
+    entities += build_cycle_meters(
+        hass, device, source=f"sensor.{count_lifetime}",
+        name_suffix="cycles_count", unit=None, device_class=None,
+    )
+    entities += build_cycle_meters(
+        hass, device, source=f"sensor.{duration_lifetime}",
+        name_suffix="cycles_duration", unit="s", device_class=SensorDeviceClass.DURATION,
+    )
+    return entities
 
 
 def build_binary_sensors(hass, device):
