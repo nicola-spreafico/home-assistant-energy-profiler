@@ -22,7 +22,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 
@@ -110,3 +110,40 @@ class EnergyLifetimeSensor(RestoreSensor):
 
         self._total += Decimal(str(diff))
         self.async_write_ha_state()
+
+
+class StandbyEnergyAccumulator(EnergyLifetimeSensor):
+    """Energy drawn while the device is idle: accumulate only when ``_running`` is off.
+
+    Reincarnates ``004_standby/standby_002``. The original expressed standby energy
+    as ``current - cycle_stop_snapshot`` (a value resetting to 0 at each cycle start);
+    gating the accumulation on the running state gives the **same per-cycle standby
+    energy** the downstream Lean meters report, without depending on the cycle
+    stop-snapshot. While the device runs the baseline is advanced but nothing is
+    added, so active-cycle energy is never counted as standby.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        slug: str,
+        energy_source: str,
+        running_entity: str,
+        icon: str = "mdi:power-sleep",
+        name: str | None = None,
+    ) -> None:
+        super().__init__(hass, slug=slug, energy_source=energy_source, icon=icon, name=name)
+        self._running_entity = running_entity
+
+    @callback
+    def _async_on_energy_change(self, event: Event) -> None:
+        if self.hass.states.is_state(self._running_entity, STATE_ON):
+            # Running: keep the baseline current so the on-period energy is excluded,
+            # but do not accumulate.
+            new_state = event.data.get("new_state")
+            value = _to_float(new_state.state if new_state else None)
+            if value is not None:
+                self._last_energy = value
+            return
+        super()._async_on_energy_change(event)
