@@ -22,10 +22,11 @@ import logging
 
 from homeassistant.components.sensor import SensorDeviceClass
 
-from ..const import CONF_ENERGY, CONF_ENERGY_PRICE, CONF_SELF_SUFFICIENCY_SOURCE
+from ..const import CONF_ENERGY_PRICE, CONF_SELF_SUFFICIENCY_SOURCE
 from ..integrator import EnergyCostIntegratorSensor
 from ..lean import build_cycle_meters
-from ..split import EnergySplitAccumulatorSensor, SelfSufficiencyRatioSensor
+from ..split import EnergyBalancerSensor, SplitPartnerSensor, SelfSufficiencyRatioSensor
+from .energy import lifetime_entity_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,31 +43,26 @@ def build(hass, device):
         return []
 
     prefix = device["prefix"]
-    energy = device[CONF_ENERGY]
     price = device.get(CONF_ENERGY_PRICE)
     cycles = device.get("cycles") or ["daily", "monthly", "yearly"]
 
     from_self_lifetime = f"{prefix}_energy_from_self_lifetime"
     from_grid_lifetime = f"{prefix}_energy_from_grid_lifetime"
 
-    entities = [
-        EnergySplitAccumulatorSensor(
-            hass,
-            slug=from_self_lifetime,
-            energy_source=energy,
-            ratio_source=ratio_source,
-            portion="self",
-            icon=ICON_SELF,
-        ),
-        EnergySplitAccumulatorSensor(
-            hass,
-            slug=from_grid_lifetime,
-            energy_source=energy,
-            ratio_source=ratio_source,
-            portion="grid",
-            icon=ICON_GRID,
-        ),
-    ]
+    # Grid partner is passive; the balancer owns the single atomic split and pushes
+    # the exact remainder to it, so from_self + from_grid == total consumed, always.
+    from_grid = SplitPartnerSensor(hass, slug=from_grid_lifetime, icon=ICON_GRID)
+    from_self = EnergyBalancerSensor(
+        hass,
+        slug=from_self_lifetime,
+        # Split the decoupled lifetime's deltas (reset-free) so from_self + from_grid
+        # stays equal to the energy total across hw sensor changes.
+        energy_source=lifetime_entity_id(prefix),
+        ratio_source=ratio_source,
+        partner=from_grid,
+        icon=ICON_SELF,
+    )
+    entities = [from_self, from_grid]
 
     entities += build_cycle_meters(
         hass, device,

@@ -19,6 +19,7 @@ from homeassistant.components.sensor import SensorDeviceClass
 from ..const import CONF_ENERGY, CONF_ENERGY_PRICE
 from ..integrator import EnergyCostIntegratorSensor
 from ..lean import build_cycle_meters
+from .energy import lifetime_entity_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +40,9 @@ def build(hass, device):
         EnergyCostIntegratorSensor(
             hass,
             slug=lifetime_slug,
-            energy_source=device[CONF_ENERGY],
+            # Integrate the decoupled lifetime's deltas (reset-free), not the raw hw
+            # sensor, so cost stays consistent with the energy total on plug swaps.
+            energy_source=lifetime_entity_id(prefix),
             price_source=price,
         )
     ]
