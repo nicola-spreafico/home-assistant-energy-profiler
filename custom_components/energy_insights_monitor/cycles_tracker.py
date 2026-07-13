@@ -24,7 +24,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
 from datetime import timedelta
 
@@ -603,12 +603,16 @@ class CycleTrackerSensor(_RestoreDecimal):
         old_state = event.data.get("old_state")
         if new_state is None:
             return
-        was_on = old_state is not None and old_state.state == STATE_ON
-        is_on = new_state.state == STATE_ON
+        old_off = old_state is not None and old_state.state == STATE_OFF
+        old_on = old_state is not None and old_state.state == STATE_ON
 
-        if is_on and not was_on:
+        # Only genuine off<->on transitions open/close a cycle. Ignoring
+        # unknown/unavailable edges avoids opening a spurious cycle at restart
+        # while the device is already running (and the crash of touching the
+        # snapshot before it is registered).
+        if new_state.state == STATE_ON and old_off:
             self._open_cycle()
-        elif was_on and not is_on and self._start_time is not None:
+        elif new_state.state == STATE_OFF and old_on and self._start_time is not None:
             self._close_cycle()
 
     @callback
