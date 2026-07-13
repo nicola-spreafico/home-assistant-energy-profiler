@@ -120,10 +120,11 @@ class CycleSumAccumulatorSensor(_RestoreDecimal):
     """Total of a per-cycle quantity (e.g. cost €, from_self kWh) over all cycles.
 
     Fed by the tracker with the per-cycle delta of a lifetime source; used to derive
-    the corresponding per-cycle mean.
+    the corresponding per-cycle mean. state_class TOTAL (not total_increasing) so it
+    is valid for monetary device classes too.
     """
 
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_state_class = SensorStateClass.TOTAL
 
     def __init__(
         self,
@@ -149,7 +150,6 @@ class MeanSensor(SensorEntity):
     """Per-completed-cycle mean: ``total / count`` (None until the first cycle)."""
 
     _attr_should_poll = False
-    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
         self,
@@ -288,8 +288,6 @@ class HumanDurationSensor(SensorEntity):
 class CompletedValueSensor(_RestoreDecimal):
     """The last completed cycle's value (energy or duration), updated on cycle end."""
 
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
     def __init__(
         self,
         hass: HomeAssistant,
@@ -331,7 +329,7 @@ class CycleSnapshotSensor(SensorEntity):
         self._attr_extra_state_attributes = {}
 
     @callback
-    def update(self, when, attributes: dict) -> None:
+    def set_snapshot(self, when, attributes: dict) -> None:
         self._attr_native_value = when
         self._attr_extra_state_attributes = attributes
         self.async_write_ha_state()
@@ -360,7 +358,6 @@ class CycleLiveSensor(SensorEntity):
     """During a running cycle: ``current(source) - initial(start snapshot)``, else 0."""
 
     _attr_should_poll = False
-    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
         self, hass: HomeAssistant, *, slug: str, source_entity: str, snapshot_entity: str,
@@ -620,7 +617,7 @@ class CycleTrackerSensor(_RestoreDecimal):
         now = dt_util.utcnow()
         self._start_time = now - self._on_delay if self._on_delay else now
         self._start = {name: self._value_of(src) for name, src, *_ in self._metrics}
-        self._start_snapshot.update(
+        self._start_snapshot.set_snapshot(
             self._start_time, {f"initial_{name}": self._start[name] for name, *_ in self._metrics}
         )
 
@@ -645,7 +642,7 @@ class CycleTrackerSensor(_RestoreDecimal):
         valid, status = _validate(duration_s, energy, self._limits)
 
         # Snapshots, duration and derived completed values (always written).
-        self._stop_snapshot.update(stop_time, {f"final_{name}": finals[name] for name in finals})
+        self._stop_snapshot.set_snapshot(stop_time, {f"final_{name}": finals[name] for name in finals})
         self._completed_duration.set(Decimal(str(duration_s)))
         if self._completed_ss is not None and energy and "from_self" in deltas:
             self._completed_ss.set(Decimal(str(round(deltas["from_self"] / energy * 100, 3))))

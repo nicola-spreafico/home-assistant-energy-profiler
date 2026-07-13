@@ -29,6 +29,6 @@ async def async_setup_platform(hass, config, async_add_entities: AddEntitiesCall
         entities.extend(families.build_entities(hass, device))
 
     _LOGGER.debug("Energy Insights Monitor: adding %d entities", len(entities))
-    # update_before_add=True so meters seed from their source on startup, matching
-    # how the Lean platform adds its own entities.
-    async_add_entities(entities, True)
+    # No update_before_add: these entities are push-based (should_poll=False) and
+    # seed themselves in async_added_to_hass.
+    async_add_entities(entities)
