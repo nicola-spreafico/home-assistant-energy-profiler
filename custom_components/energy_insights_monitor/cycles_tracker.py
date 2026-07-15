@@ -335,8 +335,12 @@ class CycleSnapshotSensor(SensorEntity):
         self.async_write_ha_state()
 
 
-class CycleValidationSensor(SensorEntity):
-    """Whether the last completed cycle passed the configured min/max limits."""
+class CycleValidationSensor(RestoreSensor):
+    """Whether the last completed cycle passed the configured min/max limits.
+
+    Restored across restarts, so the outcome of the last cycle isn't lost when
+    Home Assistant reboots between two cycles.
+    """
 
     _attr_should_poll = False
     _attr_icon = "mdi:check-decagram"
@@ -347,6 +351,12 @@ class CycleValidationSensor(SensorEntity):
         self._attr_unique_id = slug
         self._attr_name = name or slug
         self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and last.native_value is not None:
+            self._attr_native_value = last.native_value
 
     @callback
     def set(self, status: str) -> None:
