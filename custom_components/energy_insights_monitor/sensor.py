@@ -2,8 +2,10 @@
 
 import logging
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_platform
+import voluptuous as vol
+
+from homeassistant.core import HomeAssistant, SupportsResponse
+from homeassistant.helpers import config_validation as cv, entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import families
@@ -32,3 +34,33 @@ async def async_setup_platform(hass, config, async_add_entities: AddEntitiesCall
     # No update_before_add: these entities are push-based (should_poll=False) and
     # seed themselves in async_added_to_hass.
     async_add_entities(entities)
+
+    # Maintenance services inherited from the Lean core. Lean registers the same
+    # services on its own platform only, so they cannot target entities added by
+    # this integration — re-register them here under this domain. They resolve by
+    # method name, hence they apply only to the LeanFamilyMeter (cycle meter)
+    # entities; targeting any other EIM entity raises an error.
+    platform = entity_platform.async_get_current_platform()
+    platform.async_register_entity_service(
+        "calibrate",
+        {vol.Required("value"): vol.Coerce(float)},
+        "async_calibrate",
+    )
+    platform.async_register_entity_service(
+        "import_history",
+        {vol.Required("source_entity"): cv.entity_id},
+        "async_import_history",
+        supports_response=SupportsResponse.ONLY,
+    )
+    platform.async_register_entity_service(
+        "thin_history",
+        {},
+        "async_thin_history",
+        supports_response=SupportsResponse.ONLY,
+    )
+    platform.async_register_entity_service(
+        "clear_history",
+        {vol.Required("confirm_deletion"): cv.string},
+        "async_clear_history",
+        supports_response=SupportsResponse.ONLY,
+    )
