@@ -8,8 +8,8 @@ Replaces the whole ``003_cycles`` folder:
 - count and duration, exposed per-period via Lean meters;
 - ``cycle_completed`` / ``cycle_discarded`` events for user automations.
 
-Not ported (niche): ``costovertime``, ``cycle_completed_start/stop`` (covered by the
-snapshot timestamps) and ``cycles_duration_summary_human`` (a formatting sensor).
+Not ported (niche): ``cycle_completed_start/stop`` — covered by the snapshot
+timestamps.
 """
 
 from ..const import (

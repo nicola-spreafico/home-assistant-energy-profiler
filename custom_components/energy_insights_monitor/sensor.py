@@ -14,6 +14,15 @@ from .lean import lean_available
 _LOGGER = logging.getLogger(__name__)
 
 
+async def _async_reset(entity, call) -> None:
+    """Reset an accumulator/peak entity; no-op when the entity is not resettable."""
+    reset = getattr(entity, "async_reset", None)
+    if reset is None:
+        _LOGGER.debug("reset: %s has nothing to reset; ignoring", entity.entity_id)
+        return
+    await reset()
+
+
 async def async_setup_platform(hass, config, async_add_entities: AddEntitiesCallback, discovery_info=None):
     """Build the entity list for every resolved device and add it."""
     if not discovery_info:
@@ -41,6 +50,9 @@ async def async_setup_platform(hass, config, async_add_entities: AddEntitiesCall
     # method name, hence they apply only to the LeanFamilyMeter (cycle meter)
     # entities; targeting any other EIM entity raises an error.
     platform = entity_platform.async_get_current_platform()
+    # Idiomatic replacement for the old reset_* scripts. Deliberately a no-op on
+    # entities that expose nothing to reset (means, live views, Lean meters).
+    platform.async_register_entity_service("reset", {}, _async_reset)
     platform.async_register_entity_service(
         "calibrate",
         {vol.Required("value"): vol.Coerce(float)},
