@@ -81,4 +81,4 @@ You don't have to take it on faith. Shortly after startup, the Lean core checks 
 
 Nothing crashes — which is exactly the problem. The recorder silently compiles hourly statistics into the same long-term series the Lean meters maintain, on a different cumulative baseline. Days later, the energy graphs show duplicated or negative bars.
 
-Recovery is supported but explicit: fix the recorder config, restart, then run `energy_insights_monitor.thin_history` on each affected meter — it rebuilds the series keeping only the consolidated per-cycle rows (and clears the accumulated short-term statistics and state rows too). Take a database backup first; the operation deletes data by design.
+Recovery is supported but explicit: fix the recorder config, restart, then run `lean_utility_meter.thin_history` on each affected meter (the cycle meters are native Lean entities) — it rebuilds the series keeping only the consolidated per-cycle rows (and clears the accumulated short-term statistics and state rows too). Take a database backup first; the operation deletes data by design.

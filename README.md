@@ -63,10 +63,8 @@ Focused configurations in the `examples/` directory:
 
 ## Services
 
-The integration registers entity services under its own domain:
-
 - `energy_insights_monitor.reset` — zero a resettable entity (lifetime accumulators, cycle counters, peak power); no-op on entities with nothing to reset
-- `energy_insights_monitor.thin_history`, `import_history`, `clear_history`, `calibrate` — the [Lean maintenance services](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter/blob/master/docs/services.md), re-exposed so they can target this integration's cycle meters
+- The per-cycle meters are **native Lean entities** (created through the `lean_utility_meter` platform via discovery), so the [Lean maintenance services](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter/blob/master/docs/services.md) — `lean_utility_meter.thin_history`, `import_history`, `clear_history`, `calibrate` — target them directly, and Lean's Repairs self-diagnostics cover them too
 
 The cycles family also fires `energy_insights_monitor_cycle_completed` / `_cycle_discarded` events for your own automations — payload documented in [Entities](docs/entities.md#events).
 

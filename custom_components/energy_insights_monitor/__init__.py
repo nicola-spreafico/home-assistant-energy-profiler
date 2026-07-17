@@ -39,7 +39,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     device_configs = [build_device_config(dev, defaults) for dev in devices]
     _LOGGER.info("Energy Insights Monitor: setting up %d device(s)", len(device_configs))
 
-    hass.data[DOMAIN] = {"devices": device_configs}
+    # hass_config is kept for the nested discovery dispatch to lean_utility_meter
+    # (async_load_platform requires the full config for component bootstrap).
+    hass.data[DOMAIN] = {"devices": device_configs, "hass_config": config}
 
     # Forward the resolved specs to each platform, which instantiates the per-family
     # entities for every device (sensors for the meters, binary_sensors for run state).
