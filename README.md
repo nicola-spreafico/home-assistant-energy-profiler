@@ -198,7 +198,7 @@ Then configure the recorder — this part is **not optional**: the period meters
 | --- | --- |
 | [Recorder Setup](docs/recorder.md) | **Read this first.** What to exclude/include and why, with ready-made blocks for both exclude-based and include-based (whitelist) systems |
 | [Configuration](docs/configuration.md) | Every option, grouped by area: base, shared defaults, running detection, cycle analytics, standby |
-| [Entities](docs/entities.md) | The complete catalog of entities a device can expose, grouped by family, with the meaning of each one |
+| [Entities](docs/entities.md) | The catalog overview (groups model, markers, status label), split into one page per block: [base](docs/entities-base.md), [running](docs/entities-running.md), [cycles](docs/entities-cycles.md), [standby](docs/entities-standby.md) |
 | [Services & Actions](docs/services.md) | `reset` and the entities it supports; which entities are Lean-native meters and answer to Lean's own services |
 
 ### Examples
@@ -220,7 +220,7 @@ Focused configurations in the `examples/` directory:
 
 Details and the full entity lists in [Services & Actions](docs/services.md).
 
-The cycles family also fires `energy_insights_monitor_cycle_completed` / `_cycle_discarded` events for your own automations — payload documented in [Entities](docs/entities.md#events).
+The cycles family also fires `energy_insights_monitor_cycle_completed` / `_cycle_discarded` events for your own automations — payload documented in [Cycle tracking entities](docs/entities-cycles.md#events).
 
 ## Status
 

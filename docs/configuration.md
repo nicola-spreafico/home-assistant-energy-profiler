@@ -91,7 +91,7 @@ running:
 
 ## Cycle analytics (`cycle_tracking:`)
 
-The analytics **consumer** of the running signal: counts each run with its duration, energy, cost, solar split, … (the full output is in [Entities](entities.md#cycles--requires-running-and-cycle_tracking)). Requires `running:`; without it the family is skipped with a warning.
+The analytics **consumer** of the running signal: counts each run with its duration, energy, cost, solar split, … (the full output is in [Cycle tracking entities](entities-cycles.md)). Requires `running:`; without it the family is skipped with a warning.
 
 ```yaml
 cycle_tracking: true          # analytics, no plausibility limits
