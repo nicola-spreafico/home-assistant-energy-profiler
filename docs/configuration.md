@@ -12,6 +12,7 @@ Everything lives under a single `energy_insights_monitor:` block: one global `de
 | `running:` block | the running **signal**: `binary_sensor.<prefix>_running`, nothing else |
 | `cycle_tracking:` (needs `running:`) | **cycles** family — per-run analytics: completed/live/mean values, counters, events |
 | `standby:` (bool or trigger block) | **standby** family — idle energy and its cost, gated on `binary_sensor.<prefix>_standby` |
+| `running:` and/or `standby:` | also `sensor.<prefix>_status` — a presentation-only enum label (`running`/`standby`/`poweroff`/`poweron`) for dashboards |
 
 Two vocabulary notes, deliberate and consistent across docs and entities:
 

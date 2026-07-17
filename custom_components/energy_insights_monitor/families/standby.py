@@ -53,6 +53,11 @@ def _default_mode_misconfigured(device) -> bool:
     return device.get(CONF_STANDBY) is True and not device.get(CONF_RUNNING)
 
 
+def has_gatekeeper(device) -> bool:
+    """True when the device will actually get a ``_standby`` binary sensor."""
+    return bool(device.get(CONF_STANDBY)) and not _default_mode_misconfigured(device)
+
+
 def build_binary_sensors(hass, device):
     """Return the ``_standby`` gatekeeper in the configured flavor."""
     standby = device.get(CONF_STANDBY)

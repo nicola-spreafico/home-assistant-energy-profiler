@@ -134,3 +134,9 @@ cycle_count: 42              # valid cycles so far
 | `sensor.<p>_standby_duration` 💤 | s | How long the current standby stretch has lasted (0 while not in standby) |
 | `sensor.<p>_standby_energy_cost_lifetime` 💤 ↺ | € | Standby energy priced at the current tariff (with `energy_price`) |
 | `sensor.<p>_standby_energy_cost_<period>` 🚫 | € | Lean period meters over it |
+
+## Device status — requires `running:` and/or `standby:`
+
+| Entity | Unit | Description |
+| --- | --- | --- |
+| `sensor.<p>_status` 📈 | enum | **Presentation-only** label derived from the gatekeepers, handy on dashboards; never consumed by internal logic. States depend on the configured signals: with both, `running` > `standby` > `poweroff`; with running only, `running`/`poweroff`; with standby only, `standby`/`poweron` (out of standby = actively drawing). With the default standby flavor `poweroff` never occurs (it cannot distinguish idle-drawing from truly off). Unavailable whenever a configured gatekeeper is unreadable |

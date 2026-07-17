@@ -28,7 +28,32 @@ def build_entities(hass, device):
         builder = _BUILDERS.get(family)
         if builder:
             entities.extend(builder(hass, device))
+    entities.extend(_build_status(hass, device))
     return entities
+
+
+def _build_status(hass, device):
+    """The ``_status`` dashboard label, when at least one gatekeeper exists.
+
+    Presentation-only: derived from the running/standby binary sensors, never
+    consumed by internal logic.
+    """
+    from ..status import DeviceStatusSensor
+
+    has_running = bool(device.get(CONF_RUNNING))
+    has_standby = standby.has_gatekeeper(device)
+    if not has_running and not has_standby:
+        return []
+
+    prefix = device["prefix"]
+    return [
+        DeviceStatusSensor(
+            hass,
+            slug=f"{prefix}_status",
+            running_entity=cycles.running_entity_id(prefix) if has_running else None,
+            standby_entity=standby.standby_entity_id(prefix) if has_standby else None,
+        )
+    ]
 
 
 def build_binary_sensors(hass, device):
