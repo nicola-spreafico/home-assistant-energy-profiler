@@ -9,9 +9,9 @@ Everything lives under a single `energy_insights_monitor:` block: one global `de
 | `power` + `energy` (required) | **power** + **energy** families — peak power, all-time total, per-period energy meters |
 | `energy_price` | **cost** family — € accumulators, per-period cost meters, instant cost rates |
 | `self_sufficiency_source` | **self-sufficiency** family — solar/grid split (power, energy, %), and with a price also savings/grid-cost |
-| `running:` block | the running **signal**: `binary_sensor.<prefix>_running`, nothing else |
+| `running:` block | the running **signal** (`binary_sensor.<prefix>_running`) plus the **running energy group** — the same stack as the total, gated on it |
 | `cycle_tracking:` (needs `running:`) | **cycles** family — per-run analytics: completed/live/mean values, counters, events |
-| `standby:` (bool or trigger block) | **standby** family — idle energy and its cost, gated on `binary_sensor.<prefix>_standby` |
+| `standby:` (bool or trigger block) | the standby **signal** (`binary_sensor.<prefix>_standby`) plus the **standby energy group** — same stack, gated on it |
 | `running:` and/or `standby:` | also `sensor.<prefix>_status` — a presentation-only enum label (`running`/`standby`/`poweroff`/`poweron`) for dashboards |
 
 Two vocabulary notes, deliberate and consistent across docs and entities:
@@ -49,7 +49,7 @@ Global values inherited by every device that does not override them.
 
 ## Running detection (`running:`)
 
-A **signal**: declaring it creates `binary_sensor.<prefix>_running` and nothing else. Consumers hang on it explicitly: [`cycle_tracking:`](#cycle-analytics-cycle_tracking) for run analytics, and the default flavor of [`standby:`](#standby-standby). It is also perfectly fine on its own, e.g. to drive your own automations.
+A **signal**: declaring it creates `binary_sensor.<prefix>_running` and enables the **running energy group** — the same energy/split/cost stack as the total, accumulated only while running (see [Entities](entities.md#energy-groups--total-running-standby)). Other consumers hang on the signal explicitly: [`cycle_tracking:`](#cycle-analytics-cycle_tracking) for run analytics, and the default flavor of [`standby:`](#standby-standby). Unlike the cycles family, the running group counts *every* running moment, validated or not — it is what lets you split running vs standby consumption without tracking cycles.
 
 Two trigger flavors:
 
@@ -113,7 +113,7 @@ The verdict (or `valid`) is exposed by `sensor.<prefix>_cycle_validation_status`
 
 ## Standby (`standby:`)
 
-Enables the **standby** family: energy accumulated while the device is in standby (plus its cost, when priced), gated on a dedicated `binary_sensor.<prefix>_standby`. Three flavors:
+Enables the **standby energy group**: the full energy stack (energy, solar/grid split, costs, self-sufficiency % — same block as the total and running groups) accumulated while the device is in standby, gated on a dedicated `binary_sensor.<prefix>_standby`, plus the live `…_standby_duration`. Three gatekeeper flavors:
 
 **Default** — standby is simply "not running". Requires the `running:` block (without the signal there is no notion of "idle"; the family is skipped with a warning) — but **not** `cycle_tracking`: a device can define running purely to give standby its complement. The standby sensor mirrors `…_running` inverted, and follows its availability:
 

@@ -38,10 +38,11 @@ CONF_OFF_ABOVE = "off_above"                           # standby ends when power
 DEFAULT_NAME_SUFFIX = "_em"
 DEFAULT_PERIODS = ["daily", "monthly", "yearly"]
 
-# Feature families (mirror the generator's template folders)
+# Feature families. The energy groups (total/running/standby) share one stack
+# builder (families/energy_stack.py); cost and solar-split are sub-blocks of
+# each group, driven by energy_price / self_sufficiency_source.
 FAMILY_POWER = "power"
 FAMILY_ENERGY = "energy"
-FAMILY_COST = "cost"
-FAMILY_SELF_SUFFICIENCY = "self_sufficiency"
+FAMILY_RUNNING = "running_energy"
 FAMILY_CYCLES = "cycles"
 FAMILY_STANDBY = "standby"

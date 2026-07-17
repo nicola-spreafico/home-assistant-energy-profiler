@@ -4,11 +4,11 @@
 
 Point it at a device's power and energy sensors and it builds the whole analytical stack for you:
 
-- **Energy** — all-time total decoupled from the hardware sensor (survives plug swaps), plus per-period meters (daily / monthly / yearly / …)
+- **Energy in three symmetric groups** — **total**, **running-only** and **standby-only**: each group exposes the same block (energy, solar/grid split, cost, savings/grid-cost, self-sufficiency %, per-period meters), so separating useful consumption from "vampire" waste never costs you the solar or cost breakdown
 - **Cost** — € accumulated at the price valid *at the moment of consumption*, projected cost rates (€/h, €/day, …)
-- **Self-sufficiency** — how much of the device's energy came from your solar production vs the grid, what it saved you and what the grid imports cost, as instantaneous power, cumulative energy and percentages
+- **Self-sufficiency** — how much of each group's energy came from your solar production vs the grid, what it saved you and what the grid imports cost, as instantaneous power, cumulative energy and percentages
 - **Run cycles** — detects appliance runs (dishwasher, washing machine, A/C…), validates them against duration/energy limits, and tracks per-run values, means and totals; fires events you can automate on
-- **Standby** — the "vampire" energy (and its cost) drawn while the device is *not* running
+- **Device status label** — a ready-made `running`/`standby`/`poweroff` enum for dashboards
 
 All cumulative series are backed by [Lean Utility Meter](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter): long-term statistics get **one consolidated row per closed period** instead of thousands of hourly rows, while the dashboards stay live. A fully-equipped device exposes 80+ entities but adds only a handful of rows per day to your database — provided the recorder is configured as documented in [Recorder Setup](docs/recorder.md).
 

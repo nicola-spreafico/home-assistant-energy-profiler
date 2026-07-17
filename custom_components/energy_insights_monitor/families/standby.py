@@ -12,18 +12,16 @@ gatekeeper, whose flavor is chosen by the ``standby`` option:
   stays inside the vampire range (inverted thresholds vs ``running``);
 - ``standby: {trigger: template, ...}`` — a custom condition.
 
-While the gatekeeper is on, a :class:`StandbyEnergyAccumulator` accumulates the
-energy deltas (yielding the per-cycle standby energy for the downstream Lean
-meters), and ``_standby_duration`` counts the time spent in standby.
+While the gatekeeper is on, the group accumulates the standby energy through
+the shared energy stack (see energy_stack.py) — same block as the total and
+running groups: energy, solar/grid split, costs, %, period meters — plus the
+``_standby_duration`` live counter.
 """
 
 import logging
 
-from homeassistant.components.sensor import SensorDeviceClass
-
 from ..const import (
     CONF_AVAILABLE,
-    CONF_ENERGY_PRICE,
     CONF_OFF_ABOVE,
     CONF_OFF_DELAY,
     CONF_ON_BELOW,
@@ -34,11 +32,9 @@ from ..const import (
     CONF_STATE,
     CONF_TRIGGER,
 )
-from ..integrator import EnergyCostIntegratorSensor
-from ..lean import build_period_meters
-from ..lifetime import StandbyEnergyAccumulator
 from .cycles import running_entity_id
 from .energy import lifetime_entity_id
+from . import energy_stack
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,52 +106,24 @@ def build_binary_sensors(hass, device):
 
 
 def build(hass, device):
-    """Return the standby energy accumulator, its Lean meters, and (if priced) cost."""
+    """Return the standby energy stack plus the live standby duration."""
     prefix = device["prefix"]
 
     if _default_mode_misconfigured(device):
         return []  # already warned in build_binary_sensors
 
-    price = device.get(CONF_ENERGY_PRICE)
-    standby_lifetime = f"{prefix}_standby_energy_lifetime"
-
     from ..cycles_tracker import StandbyDurationSensor
 
-    entities = [
-        StandbyEnergyAccumulator(
-            hass,
-            slug=standby_lifetime,
-            # Gate the decoupled lifetime's deltas on the standby gatekeeper.
-            energy_source=lifetime_entity_id(prefix),
-            standby_entity=standby_entity_id(prefix),
-        ),
+    entities = energy_stack.build_stack(
+        hass, device,
+        name_base="standby_energy",
+        # Gate the decoupled lifetime's deltas on the standby gatekeeper.
+        source=lifetime_entity_id(prefix),
+        gate_entity=standby_entity_id(prefix),
+    )
+    entities.append(
         StandbyDurationSensor(
             hass, slug=f"{prefix}_standby_duration", standby_entity=standby_entity_id(prefix),
-        ),
-    ]
-    entities += build_period_meters(
-        hass, device,
-        source=f"sensor.{standby_lifetime}",
-        name_suffix="standby_energy",
-        unit="kWh", device_class=SensorDeviceClass.ENERGY,
+        )
     )
-
-    if price:
-        standby_cost_lifetime = f"{prefix}_standby_energy_cost_lifetime"
-        entities.append(
-            EnergyCostIntegratorSensor(
-                hass,
-                slug=standby_cost_lifetime,
-                energy_source=f"sensor.{standby_lifetime}",
-                price_source=price,
-                icon="mdi:cash-clock",
-            )
-        )
-        entities += build_period_meters(
-            hass, device,
-            source=f"sensor.{standby_cost_lifetime}",
-            name_suffix="standby_energy_cost",
-            unit="€", device_class=SensorDeviceClass.MONETARY,
-        )
-
     return entities

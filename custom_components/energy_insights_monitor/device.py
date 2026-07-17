@@ -25,8 +25,7 @@ from .const import (
     CONF_STANDBY,
     FAMILY_POWER,
     FAMILY_ENERGY,
-    FAMILY_COST,
-    FAMILY_SELF_SUFFICIENCY,
+    FAMILY_RUNNING,
     FAMILY_CYCLES,
     FAMILY_STANDBY,
 )
@@ -53,12 +52,16 @@ def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dic
 
 
 def _enabled_families(resolved: dict[str, Any]) -> list[str]:
-    """Decide which entity families to build, from what the config declares."""
-    families = [FAMILY_POWER, FAMILY_ENERGY, FAMILY_COST]  # always on
+    """Decide which entity families to build, from what the config declares.
 
-    # from_self / from_grid / savings / grid_cost + self-sufficiency %
-    if resolved.get(CONF_SELF_SUFFICIENCY_SOURCE):
-        families.append(FAMILY_SELF_SUFFICIENCY)
+    Cost and solar-split are not families anymore: they are sub-blocks of each
+    energy group's stack, driven by energy_price / self_sufficiency_source.
+    """
+    families = [FAMILY_POWER, FAMILY_ENERGY]  # always on
+
+    # running-energy group: same stack as the total, gated on the running signal
+    if resolved.get(CONF_RUNNING):
+        families.append(FAMILY_RUNNING)
 
     # run-cycle analytics: an explicit consumer of the running signal
     if resolved.get(CONF_CYCLE_TRACKING) is not None:

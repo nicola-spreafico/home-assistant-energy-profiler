@@ -1,27 +1,16 @@
-"""Family: energy.
+"""Group: total energy — the ungated view of the device's consumption.
 
-Replaces the generator's ``001_basics/basics_002_[energy]`` fragment.
-
-The old fragment built, per cycle, a transient ``utility_meter`` plus a template
-snapshot sensor captured at 23:59:55 (thousands of LTS rows), plus a no-cycle
-``_energy_lifetime`` for the all-time total. Here:
-
-- a single :class:`EnergyLifetimeSensor` accumulates the all-time total, decoupled
-  from the raw hardware sensor (survives plug swaps / id changes);
-- one Lean meter per cycle collapses each period into a single consolidated LTS row,
-  **sourced from the lifetime** (not the hw sensor) so the whole chain inherits that
-  decoupling.
-
-Entity ids are preserved (``sensor.<prefix>_energy_<cycle>`` and
-``sensor.<prefix>_energy_lifetime``) so the historical migration keeps the same
-LTS series and the same all-time entity.
+The full energy stack (see energy_stack.py) sourced from the hardware energy
+sensor with no gate: the base ``_energy_lifetime`` is the decoupled all-time
+total every other group and family reads from (it accumulates only positive
+increments, so a plug swap or a sensor-id change never resets the number nor
+injects a phantom delta downstream). Also the only group with the instantaneous
+cost projections. Entity ids preserved from the old generator
+(``sensor.<prefix>_energy_*``) so migrations keep the same LTS series.
 """
 
-from homeassistant.components.sensor import SensorDeviceClass
-
 from ..const import CONF_ENERGY
-from ..lean import build_period_meters
-from ..lifetime import EnergyLifetimeSensor
+from . import energy_stack
 
 
 def lifetime_entity_id(prefix: str) -> str:
@@ -30,19 +19,10 @@ def lifetime_entity_id(prefix: str) -> str:
 
 
 def build(hass, device):
-    """Return the energy lifetime accumulator plus one Lean meter per cycle."""
-    prefix = device["prefix"]
-    lifetime_slug = f"{prefix}_energy_lifetime"
-
-    entities = [
-        EnergyLifetimeSensor(hass, slug=lifetime_slug, energy_source=device[CONF_ENERGY]),
-    ]
-    entities += build_period_meters(
-        hass,
-        device,
-        source=f"sensor.{lifetime_slug}",
-        name_suffix="energy",
-        unit="kWh",
-        device_class=SensorDeviceClass.ENERGY,
+    """Return the total-energy stack for a resolved device."""
+    return energy_stack.build_stack(
+        hass, device,
+        name_base="energy",
+        source=device[CONF_ENERGY],
+        include_instant=True,
     )
-    return entities

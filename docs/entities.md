@@ -20,43 +20,45 @@ Each entity carries two markers:
 | `sensor.<p>_power_from_self` 💤 | W | Instantaneous share of the current draw covered by self-production (`power × pct`). Requires `self_sufficiency_source` |
 | `sensor.<p>_power_from_grid` 💤 | W | Instantaneous share imported from the grid — the exact remainder, so the two always sum to the measured power |
 
-## Energy — always on
+## Energy groups — total, running, standby
+
+Energy comes in three **groups**, symmetric by construction: each is the same sensor block over a differently-gated slice of the consumption. `<base>` below stands for the group base id:
+
+| Group | `<base>` | Counts energy… | Exists when |
+| --- | --- | --- | --- |
+| **Total** | `<p>_energy` | always — any consumption, whatever the device state | always |
+| **Running** | `<p>_running_energy` | only while `binary_sensor.<p>_running` is on | `running:` configured |
+| **Standby** | `<p>_standby_energy` | only while `binary_sensor.<p>_standby` is on | `standby:` configured |
+
+The running and standby groups source the **decoupled total lifetime**, so they inherit its reset/plug-swap protection; while their gatekeeper is off *or unavailable* the baseline advances without accumulating, so uncertain periods are never counted. Note the accounting: `total ≈ running + standby + off-residual` only when both gates are configured and never overlap — each group is gated independently, there is no enforced identity.
+
+**The common block**, per group (sub-blocks appear when their requirement is met):
+
+| Entity | Unit | Requires | Description |
+| --- | --- | --- | --- |
+| `sensor.<base>_lifetime` 💤 ↺ | kWh | — | The group's all-time accumulator. For the total group this is the decoupled source everything else reads from |
+| `sensor.<base>_<period>` 🚫 | kWh | — | Lean period meters: live counter in the UI, one consolidated LTS row per closed period |
+| `sensor.<base>_from_self_lifetime` 💤 ↺ | kWh | `self_sufficiency_source` | Share covered by self-production: each group delta split by the current self-sufficiency % |
+| `sensor.<base>_from_grid_lifetime` 💤 ↺ | kWh | ” | Grid share — the exact remainder of the same atomic split, so `from_self + from_grid` = the group total, always |
+| `sensor.<base>_from_self_<period>` / `_from_grid_<period>` 🚫 | kWh | ” | Lean period meters over the split |
+| `sensor.<base>_cost_lifetime` 💤 ↺ | € | `energy_price` | Cost integrator: each delta priced at the tariff valid *at that moment* |
+| `sensor.<base>_cost_<period>` 🚫 | € | ” | Lean period meters over the cost |
+| `sensor.<base>_from_grid_savings_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | both | What self-production saved (the `from_self` share priced) |
+| `sensor.<base>_from_grid_cost_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | both | What the grid imports actually cost (`from_grid` priced) |
+| `sensor.<base>_self_sufficiency_lifetime` 💤 (+ `_<period>` 🚫) | % | `self_sufficiency_source` | Live ratio `from_self / total` of the group; the period meters snapshot it as a gauge (one LTS point per period) |
+
+**Total group extras** — the instantaneous cost projections (`power × price`, no gate applies):
 
 | Entity | Unit | Description |
 | --- | --- | --- |
-| `sensor.<p>_energy_lifetime` 💤 ↺ | kWh | The device's all-time total, **decoupled from the hardware sensor**: accumulates only positive deltas, so meter resets or a plug swap never zero it or inject phantom energy. Every other family reads from this, inheriting the decoupling |
-| `sensor.<p>_energy_<period>` 🚫 | kWh | Lean period meter over the lifetime: live counter in the UI, one consolidated LTS row per closed period |
+| `sensor.<p>_energy_cost_instant_hourly` 💤 | €/h | Projected cost rate if the current draw held for an hour |
+| `sensor.<p>_energy_cost_instant_daily` / `_monthly` / `_yearly` 💤 | €/d, €/m, €/y | Same projection over a day / 30-day month / year |
 
-## Cost — requires `energy_price`
-
-| Entity | Unit | Description |
-| --- | --- | --- |
-| `sensor.<p>_energy_cost_lifetime` 💤 ↺ | € | Cost integrator: each energy delta is priced at the tariff valid *at that moment*, so tariff changes are handled naturally |
-| `sensor.<p>_energy_cost_<period>` 🚫 | € | Lean period meter over the cost integrator |
-| `sensor.<p>_energy_cost_instant_hourly` 💤 | €/h | Projected cost rate if the current draw held for an hour (`power × price`) |
-| `sensor.<p>_energy_cost_instant_daily` 💤 | €/d | Same projection over a day |
-| `sensor.<p>_energy_cost_instant_monthly` 💤 | €/m | Same projection over a 30-day month |
-| `sensor.<p>_energy_cost_instant_yearly` 💤 | €/y | Same projection over a year |
-
-## Self-sufficiency — requires `self_sufficiency_source`
+**Standby group extras**:
 
 | Entity | Unit | Description |
 | --- | --- | --- |
-| `sensor.<p>_energy_from_self_lifetime` 💤 ↺ | kWh | Energy covered by self-production: each lifetime delta split by the current self-sufficiency % |
-| `sensor.<p>_energy_from_grid_lifetime` 💤 ↺ | kWh | Energy imported from the grid — computed as the exact remainder of the same atomic split, so `from_self + from_grid = energy_lifetime`, always |
-| `sensor.<p>_energy_from_self_<period>` 🚫 | kWh | Lean period meters over the two splits |
-| `sensor.<p>_energy_from_grid_<period>` 🚫 | kWh | ” |
-| `sensor.<p>_energy_self_sufficiency_lifetime` 💤 | % | Live all-time ratio `from_self / total` |
-| `sensor.<p>_energy_self_sufficiency_<period>` 🚫 | % | Lean **gauge** meters: the percentage is snapshotted into one LTS row per period (it can move up and down within it) |
-
-With a price configured, two monetary views of the split are added:
-
-| Entity | Unit | Description |
-| --- | --- | --- |
-| `sensor.<p>_energy_from_grid_savings_lifetime` 💤 ↺ | € | What self-production saved you: the value of `from_self` energy priced at the purchase tariff |
-| `sensor.<p>_energy_from_grid_cost_lifetime` 💤 ↺ | € | What the grid imports actually cost (`from_grid` priced) |
-| `sensor.<p>_energy_from_grid_savings_<period>` 🚫 | € | Lean period meters over the two |
-| `sensor.<p>_energy_from_grid_cost_<period>` 🚫 | € | ” |
+| `sensor.<p>_standby_duration` 💤 | s | How long the current standby stretch has lasted (0 while not in standby) |
 
 ## Cycles — requires `running:` and `cycle_tracking:`
 
@@ -64,14 +66,14 @@ With a price configured, two monetary views of the split are added:
 
 | Entity | Unit | Description |
 | --- | --- | --- |
-| `binary_sensor.<p>_running` 📈 | — | The gatekeeper: `on` while the appliance runs, according to the configured power threshold or template trigger. Created by `running:` alone (it is the signal); cycle open/close and default-flavor standby gating follow it |
+| `binary_sensor.<p>_running` 📈 | — | The gatekeeper: `on` while the appliance runs, according to the configured power threshold or template trigger. Created by `running:` alone (it is the signal); cycle open/close, the running-energy group and default-flavor standby all follow it |
 | `sensor.<p>_cycle_start_snapshot` 💤 | timestamp | When the current/last cycle opened; attributes hold each metric's baseline (`initial_energy`, `initial_cost`, …) |
 | `sensor.<p>_cycle_stop_snapshot` 💤 | timestamp | When the last cycle closed; attributes hold the final values (`final_energy`, …) |
 | `sensor.<p>_cycle_validation_status` 📈 | — | Verdict on the last closed cycle: `valid`, `too_short`, `too_long`, `too_little_energy`, `too_much_energy` (see [limits](configuration.md#cycle-analytics-cycle_tracking)) |
 
 ### Per-metric analytics
 
-Each available metric gets the same four views. Which metrics exist depends on the other families:
+Each available metric gets the same four views. Which metrics exist depends on the configured sources:
 
 | Metric | Requires | Completed / live unit |
 | --- | --- | --- |
@@ -86,7 +88,7 @@ The four views, for each metric `<m>`:
 | --- | --- |
 | `sensor.<p>_cycle_completed_<m>` 📈 | The metric's value for the **last completed cycle** — its state history is the per-run log |
 | `sensor.<p>_cycle_live_<m>` 💤 | The **in-progress** cycle's value so far (0 when idle). For savings/grid-cost the live ids are `_cycle_live_savings_from_grid` / `_cycle_live_cost_from_grid` |
-| `sensor.<p>_cycles_<m>_lifetime` 💤 ↺ | Total of the metric accumulated over all *valid* cycles |
+| `sensor.<p>_cycles_<m>_lifetime` 💤 ↺ | Total of the metric accumulated over all *valid* cycles (a discarded run counts in the energy groups but not here) |
 | `sensor.<p>_cycles_<m>_mean` 📈 | Average per valid cycle (`lifetime / count`) |
 
 ### Duration, count and derived
@@ -124,16 +126,11 @@ status: valid                # or too_short / too_long / too_little_energy / too
 cycle_count: 42              # valid cycles so far
 ```
 
-## Standby — requires `standby:` (and `running:` only for the default flavor)
+## Standby gatekeeper — requires `standby:`
 
 | Entity | Unit | Description |
 | --- | --- | --- |
-| `binary_sensor.<p>_standby` 📈 | — | The gatekeeper: `on` while the device is in standby, per the configured flavor (`true` = running off; power range; template — see [configuration](configuration.md#standby-standby)). In the default flavor it mirrors `…_running` inverted, so recording both is redundant |
-| `sensor.<p>_standby_energy_lifetime` 💤 ↺ | kWh | Energy accumulated **only while `…_standby` is on** — the all-time cost of leaving the device plugged in |
-| `sensor.<p>_standby_energy_<period>` 🚫 | kWh | Lean period meters over it |
-| `sensor.<p>_standby_duration` 💤 | s | How long the current standby stretch has lasted (0 while not in standby) |
-| `sensor.<p>_standby_energy_cost_lifetime` 💤 ↺ | € | Standby energy priced at the current tariff (with `energy_price`) |
-| `sensor.<p>_standby_energy_cost_<period>` 🚫 | € | Lean period meters over it |
+| `binary_sensor.<p>_standby` 📈 | — | The gatekeeper: `on` while the device is in standby, per the configured flavor (`true` = running off; power range; template — see [configuration](configuration.md#standby-standby)). The standby energy group gates on it. In the default flavor it mirrors `…_running` inverted, so recording both is redundant |
 
 ## Device status — requires `running:` and/or `standby:`
 

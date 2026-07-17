@@ -117,15 +117,14 @@ class EnergyLifetimeSensor(RestoreSensor):
         self.async_write_ha_state()
 
 
-class StandbyEnergyAccumulator(EnergyLifetimeSensor):
-    """Energy drawn in standby: accumulate only while ``_standby`` is on.
+class GatedEnergyAccumulator(EnergyLifetimeSensor):
+    """Energy accumulated only while a gatekeeper is on.
 
-    Reincarnates ``004_standby/standby_002``. The original expressed standby energy
-    as ``current - cycle_stop_snapshot`` (a value resetting to 0 at each cycle start);
-    gating the accumulation on the standby gatekeeper gives the **same per-cycle
-    standby energy** the downstream Lean meters report, without depending on the
-    cycle stop-snapshot. While the gatekeeper is off (or unavailable) the baseline
-    is advanced but nothing is added, so non-standby energy is never counted.
+    The base of the running/standby energy groups (generalizes the original
+    ``004_standby/standby_002``): sources the decoupled lifetime's deltas and adds
+    them only while ``gate_entity`` (a ``_running`` or ``_standby`` binary sensor)
+    is on. While the gatekeeper is off (or unavailable) the baseline is advanced
+    but nothing is added, so out-of-gate energy is never counted.
     """
 
     def __init__(
@@ -134,17 +133,17 @@ class StandbyEnergyAccumulator(EnergyLifetimeSensor):
         *,
         slug: str,
         energy_source: str,
-        standby_entity: str,
+        gate_entity: str,
         icon: str = "mdi:power-sleep",
         name: str | None = None,
     ) -> None:
         super().__init__(hass, slug=slug, energy_source=energy_source, icon=icon, name=name)
-        self._standby_entity = standby_entity
+        self._gate_entity = gate_entity
 
     @callback
     def _async_on_energy_change(self, event: Event) -> None:
-        if not self.hass.states.is_state(self._standby_entity, STATE_ON):
-            # Not in standby (or gatekeeper unavailable): keep the baseline current
+        if not self.hass.states.is_state(self._gate_entity, STATE_ON):
+            # Gate closed (or gatekeeper unavailable): keep the baseline current
             # so this energy is excluded, but do not accumulate.
             new_state = event.data.get("new_state")
             value = _to_float(new_state.state if new_state else None)
