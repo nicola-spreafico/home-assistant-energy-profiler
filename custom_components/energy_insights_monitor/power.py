@@ -92,7 +92,12 @@ class PowerMaxSensor(RestoreSensor):
 
 
 class PowerSplitSensor(SensorEntity):
-    """Instantaneous self- or grid-sourced power: ``P * pct/100`` or ``P * (1-pct/100)``."""
+    """Instantaneous self- or grid-sourced power: ``P * pct/100`` or ``P * (1-pct/100)``.
+
+    With a ``share_source``, a second-level portion *inside* the self share:
+    ``P * pct/100 * share/100`` (or the share complement) — the instantaneous
+    solar vs battery split, mirroring the energy groups' from_solar/from_battery.
+    """
 
     _attr_should_poll = False
     _attr_device_class = SensorDeviceClass.POWER
@@ -101,10 +106,13 @@ class PowerSplitSensor(SensorEntity):
 
     def __init__(
         self, hass: HomeAssistant, *, slug: str, power_source: str, ratio_source: str,
-        portion: str, icon: str, name: str | None = None,
+        portion: str, icon: str, share_source: str | None = None,
+        share_complement: bool = False, name: str | None = None,
     ) -> None:
         if portion not in ("self", "grid"):
             raise ValueError(portion)
+        if share_source is not None and portion != "self":
+            raise ValueError("share_source only splits the self portion")
         self.hass = hass
         self.entity_id = f"sensor.{slug}"
         self._attr_unique_id = slug
@@ -113,15 +121,20 @@ class PowerSplitSensor(SensorEntity):
         self._power_source = power_source
         self._ratio_source = ratio_source
         self._portion = portion
+        # Second-level split inside the self portion (solar vs battery):
+        # multiply by share/100, or by its complement for the other side.
+        self._share_source = share_source
+        self._share_complement = share_complement
         self._attr_native_value = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self._recalculate()
+        sources = [self._power_source, self._ratio_source]
+        if self._share_source:
+            sources.append(self._share_source)
         self.async_on_remove(
-            async_track_state_change_event(
-                self.hass, [self._power_source, self._ratio_source], self._on_change
-            )
+            async_track_state_change_event(self.hass, sources, self._on_change)
         )
 
     @callback
@@ -139,5 +152,13 @@ class PowerSplitSensor(SensorEntity):
             return
         pct = max(0.0, min(100.0, raw_pct))
         factor = pct / 100 if self._portion == "self" else 1 - pct / 100
+        if self._share_source is not None:
+            raw_share = _to_float((s := self.hass.states.get(self._share_source)) and s.state)
+            if raw_share is None:
+                self._attr_available = False
+                self._attr_native_value = None
+                return
+            share = max(0.0, min(100.0, raw_share)) / 100
+            factor *= (1 - share) if self._share_complement else share
         self._attr_available = True
         self._attr_native_value = round(power * factor, 6)

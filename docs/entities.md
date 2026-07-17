@@ -6,12 +6,12 @@ The catalog is split by feature block — each page lists every entity of its bl
 
 | Page | Block | What it covers | Size* |
 | --- | --- | --- | --- |
-| [Base measurement](entities-base.md) | always on | power (peak, self/grid W), the **total energy group**: energy + cost + source splits, per period | 43 |
+| [Base measurement](entities-base.md) | always on | power (peak + instantaneous source split in W), the **total energy group**: energy + cost + source splits, per period | 45 |
 | [Running](entities-running.md) | `running:` | the running signal and the **running energy group** — consumption while the device is on | 37 |
 | [Cycle tracking](entities-cycles.md) | `cycle_tracking:` | per-run analytics: boundaries, validation, 8-metric × 4-view matrix, durations, events | 52 |
 | [Standby](entities-standby.md) | `standby:` | the standby gatekeeper and the **standby energy group** — the "vampire" waste | 38 |
 
-\* entities for a fully-configured device with the default `[daily, monthly, yearly]` periods; fewer options = fewer entities. A fully-equipped device totals **171** (84 fixed + 29 per period), including the status label below.
+\* entities for a fully-configured device with the default `[daily, monthly, yearly]` periods; fewer options = fewer entities. A fully-equipped device totals **173** (86 fixed + 29 per period), including the status label below.
 
 Throughout the pages, `<p>` stands for the device prefix (`<name><name_suffix>`, e.g. `washing_machine_em`) and `<period>` for one entity per configured period. Which blocks a device gets is decided by its options — see [Configuration](configuration.md).
 

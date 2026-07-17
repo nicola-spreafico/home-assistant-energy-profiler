@@ -11,6 +11,8 @@ What **every** device gets from just `power:` + `energy:`, enriched by the optio
 | `sensor.<p>_power_max` 📈 ↺ | W | Running peak of the power sensor, kept across restarts until you reset it |
 | `sensor.<p>_power_from_self` 💤 | W | Instantaneous share of the current draw covered by self-production (`power × pct`). Requires `self_sufficiency_source` |
 | `sensor.<p>_power_from_grid` 💤 | W | Instantaneous share imported from the grid — the exact remainder, so the two always sum to the measured power |
+| `sensor.<p>_power_from_solar` 💤 | W | Second-level instantaneous split of the self share: the watts coming straight from the panels (`power × ss% × share%`). Requires a share source |
+| `sensor.<p>_power_from_battery` 💤 | W | The battery-discharge share — the complement inside self, so `from_solar + from_battery = from_self` |
 
 ## Total energy group (`<p>_energy`)
 
@@ -39,9 +41,10 @@ The ungated view: any consumption, whatever the device state. Its `_lifetime` is
 
 ## Inventory
 
-3 power + 9 lifetimes + 9 meters per period + 4 instant. Fully-configured, with `[daily, monthly, yearly]`: **43 entities**.
+5 power + 9 lifetimes + 9 meters per period + 4 instant. Fully-configured, with `[daily, monthly, yearly]`: **45 entities**.
 
 - `sensor.<p>_power_max`, `sensor.<p>_power_from_self`, `sensor.<p>_power_from_grid`
+- `sensor.<p>_power_from_solar`, `sensor.<p>_power_from_battery`
 - `sensor.<p>_energy_lifetime` — and `sensor.<p>_energy_<period>`
 - `sensor.<p>_energy_from_self_lifetime` — and `sensor.<p>_energy_from_self_<period>`
 - `sensor.<p>_energy_from_grid_lifetime` — and `sensor.<p>_energy_from_grid_<period>`
