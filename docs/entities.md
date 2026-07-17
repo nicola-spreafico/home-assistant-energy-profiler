@@ -139,3 +139,74 @@ cycle_count: 42              # valid cycles so far
 | Entity | Unit | Description |
 | --- | --- | --- |
 | `sensor.<p>_status` 📈 | enum | **Presentation-only** label derived from the gatekeepers, handy on dashboards; never consumed by internal logic. States depend on the configured signals: with both, `running` > `standby` > `poweroff`; with running only, `running`/`poweroff`; with standby only, `standby`/`poweron` (out of standby = actively drawing). With the default standby flavor `poweroff` never occurs (it cannot distinguish idle-drawing from truly off). Unavailable whenever a configured gatekeeper is unreadable |
+
+## Appendix — full entity inventory
+
+The explicit, exhaustive list for a **fully-configured device** (`energy_price` + `self_sufficiency_source` + a share source + `running:` + `cycle_tracking:` + `standby:`). Devices with fewer options simply lose the corresponding lines. `<period>` expands to one entity per configured period — with the default `[daily, monthly, yearly]` a fully-equipped device totals **171 entities** (84 fixed + 29 per period).
+
+**Gatekeepers & status (3)**
+
+- `binary_sensor.<p>_running`
+- `binary_sensor.<p>_standby`
+- `sensor.<p>_status`
+
+**Power (3)**
+
+- `sensor.<p>_power_max`
+- `sensor.<p>_power_from_self`
+- `sensor.<p>_power_from_grid`
+
+**Energy groups (3 × (9 + 9·periods), + 4 instant, + 1 standby duration)** — for each `<base>` ∈ `<p>_energy`, `<p>_running_energy`, `<p>_standby_energy`:
+
+- `sensor.<base>_lifetime` — and `sensor.<base>_<period>`
+- `sensor.<base>_from_self_lifetime` — and `sensor.<base>_from_self_<period>`
+- `sensor.<base>_from_grid_lifetime` — and `sensor.<base>_from_grid_<period>`
+- `sensor.<base>_from_solar_lifetime` — and `sensor.<base>_from_solar_<period>`
+- `sensor.<base>_from_battery_lifetime` — and `sensor.<base>_from_battery_<period>`
+- `sensor.<base>_cost_lifetime` — and `sensor.<base>_cost_<period>`
+- `sensor.<base>_from_grid_savings_lifetime` — and `sensor.<base>_from_grid_savings_<period>`
+- `sensor.<base>_from_grid_cost_lifetime` — and `sensor.<base>_from_grid_cost_<period>`
+- `sensor.<base>_self_sufficiency_lifetime` — and `sensor.<base>_self_sufficiency_<period>`
+
+plus, total group only:
+
+- `sensor.<p>_energy_cost_instant_hourly` / `_daily` / `_monthly` / `_yearly`
+
+plus, standby group only:
+
+- `sensor.<p>_standby_duration`
+
+**Cycles (46 + 2·periods)**
+
+Boundary and engine:
+
+- `sensor.<p>_cycle_start_snapshot`
+- `sensor.<p>_cycle_stop_snapshot`
+- `sensor.<p>_cycle_validation_status`
+- `sensor.<p>_cycles_count_lifetime` — and `sensor.<p>_cycles_count_<period>`
+
+Per-metric views (8 metrics × 4 views):
+
+| Metric | Completed | Live | Lifetime over valid cycles | Mean |
+| --- | --- | --- | --- | --- |
+| energy | `…_cycle_completed_energy` | `…_cycle_live_energy` | `…_cycles_energy_lifetime` | `…_cycles_energy_mean` |
+| cost | `…_cycle_completed_cost` | `…_cycle_live_cost` | `…_cycles_cost_lifetime` | `…_cycles_cost_mean` |
+| from_self | `…_cycle_completed_energy_from_self` | `…_cycle_live_energy_from_self` | `…_cycles_energy_from_self_lifetime` | `…_cycles_energy_from_self_mean` |
+| from_grid | `…_cycle_completed_energy_from_grid` | `…_cycle_live_energy_from_grid` | `…_cycles_energy_from_grid_lifetime` | `…_cycles_energy_from_grid_mean` |
+| from_solar | `…_cycle_completed_energy_from_solar` | `…_cycle_live_energy_from_solar` | `…_cycles_energy_from_solar_lifetime` | `…_cycles_energy_from_solar_mean` |
+| from_battery | `…_cycle_completed_energy_from_battery` | `…_cycle_live_energy_from_battery` | `…_cycles_energy_from_battery_lifetime` | `…_cycles_energy_from_battery_mean` |
+| savings | `…_cycle_completed_energy_from_grid_savings` | `…_cycle_live_savings_from_grid` | `…_cycles_energy_from_grid_savings_lifetime` | `…_cycles_energy_from_grid_savings_mean` |
+| grid cost | `…_cycle_completed_energy_from_grid_cost` | `…_cycle_live_cost_from_grid` | `…_cycles_energy_from_grid_cost_lifetime` | `…_cycles_energy_from_grid_cost_mean` |
+
+Duration and derived:
+
+- `sensor.<p>_cycles_duration_lifetime` — and `sensor.<p>_cycles_duration_<period>`
+- `sensor.<p>_cycle_completed_duration`
+- `sensor.<p>_cycle_live_duration`
+- `sensor.<p>_cycles_duration_mean`
+- `sensor.<p>_cycles_duration_summary_human`
+- `sensor.<p>_cycle_completed_self_sufficiency`
+- `sensor.<p>_cycle_live_self_sufficiency`
+- `sensor.<p>_cycles_self_sufficiency_percentage_mean`
+- `sensor.<p>_cycle_completed_costovertime`
+- `sensor.<p>_cycles_costovertime_mean`
