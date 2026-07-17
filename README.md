@@ -20,31 +20,51 @@ integration will refuse to set up.
 
 ## Quick Start
 
-One block, every supported configuration — each device shows a different combination (details per option in [Configuration](docs/configuration.md)):
+### Shared defaults — once for the whole system
+
+Declare `defaults:` **exactly once**: it is the system-wide baseline every device inherits. Any key can then be overridden by a single device (or opted out with `null`). Thanks to Home Assistant's package merge, this block can live in its own file while the devices are spread across other packages.
 
 ```yaml
 energy_insights_monitor:
-  defaults:                       # shared by every device; each key can be overridden per device
+  defaults:
     energy_price: sensor.energy_price_purchase             # optional: enables the cost family
     self_sufficiency_source: sensor.home_self_sufficiency  # optional: enables the solar/grid split
-    name_suffix: _em              # entity prefix = <name> + this suffix
+    name_suffix: _em                   # entity prefix = <name> + this suffix
     live_update_interval: "00:15:00"   # throttle for the meters' live LTS upserts
     periods: [daily, monthly, yearly]  # meter windows: hourly..yearly
+```
 
+### Devices — one example per configuration
+
+Each block below is self-contained (a `devices:` list merges across package files) and highlights **one** capability; details per option in [Configuration](docs/configuration.md).
+
+**1. Minimal** — energy + cost, nothing else (cost because a default price exists):
+
+```yaml
+energy_insights_monitor:
   devices:
-    # 1) Minimal — energy + cost only (cost because a default price exists).
     - name: dishwasher
       power: sensor.dishwasher_power
       energy: sensor.dishwasher_energy
+```
 
-    # 2) Per-device overrides — opt OUT of a default with null, narrower periods.
+**2. Per-device overrides** — opt out of a default with `null`, narrow the periods:
+
+```yaml
+energy_insights_monitor:
+  devices:
     - name: home_office
       power: sensor.home_office_power
       energy: sensor.home_office_energy
       self_sufficiency_source: null    # no solar split for this device
-      periods: [daily, monthly]
+      periods: [daily, monthly]        # fewer meter windows than the default
+```
 
-    # 3) Power-based running + full cycle analytics with plausibility limits.
+**3. Power-based running + full cycle analytics** — thresholds with debounce, plausibility limits:
+
+```yaml
+energy_insights_monitor:
+  devices:
     - name: washing_machine
       power: sensor.washing_machine_power
       energy: sensor.washing_machine_energy
@@ -60,8 +80,13 @@ energy_insights_monitor:
           max_duration: "04:00:00"
           min_energy: 0.05             # kWh
           max_energy: 5.0
+```
 
-    # 4) Template-based running + analytics without limits + default standby.
+**4. Template-based running + default standby** — detection from another entity's state, analytics without limits, standby by difference:
+
+```yaml
+energy_insights_monitor:
+  devices:
     - name: bedroom_ac
       power: sensor.bedroom_ac_power
       energy: sensor.bedroom_ac_energy
@@ -71,9 +96,13 @@ energy_insights_monitor:
         state: "{{ states('climate.bedroom_ac') != 'off' }}"
       cycle_tracking: true             # analytics, no limits
       standby: true                    # standby = not running
+```
 
-    # 5) Running signal ONLY (no analytics) + default standby: the signal
-    #    exists just to define standby by difference.
+**5. Running signal only + standby** — no analytics: the signal exists just to give standby its complement:
+
+```yaml
+energy_insights_monitor:
+  devices:
     - name: tv
       power: sensor.tv_power
       energy: sensor.tv_energy
@@ -82,9 +111,13 @@ energy_insights_monitor:
         on_above: 15
         off_below: 10
       standby: true
+```
 
-    # 6) Standalone power-based standby (vampire range), no running at all.
-    #    Inverted thresholds: standby starts going DOWN through on_below.
+**6. Standalone power-based standby** — the vampire range, no running detection at all. Thresholds are inverted: standby starts going *down* through `on_below`:
+
+```yaml
+energy_insights_monitor:
+  devices:
     - name: stereo
       power: sensor.stereo_power
       energy: sensor.stereo_energy
@@ -94,8 +127,13 @@ energy_insights_monitor:
         on_delay: "00:01:00"           # …held for 1 min
         off_above: 12                  # W, over standby above this
         off_delay: "00:00:10"
+```
 
-    # 7) Standalone template-based standby.
+**7. Standalone template-based standby** — any custom condition:
+
+```yaml
+energy_insights_monitor:
+  devices:
     - name: console
       power: sensor.console_power
       energy: sensor.console_energy
