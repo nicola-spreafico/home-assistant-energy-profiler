@@ -30,6 +30,8 @@ energy_insights_monitor:
     energy_price: sensor.energy_price_purchase             # optional: enables the cost sub-block
     self_sufficiency_source: sensor.home_self_sufficiency  # optional: enables the self/grid split
     solar_share_source: sensor.home_solar_share_of_self    # optional: splits self into solar vs battery
+    # battery_share_source: sensor.home_battery_share_of_self  # …or provide the battery share instead
+    #                                                          # (mutually exclusive: one is the complement of the other)
     name_suffix: _em                   # entity prefix = <name> + this suffix
     live_update_interval: "00:15:00"   # throttle for the meters' live LTS upserts
     periods: [daily, monthly, yearly]  # meter windows: hourly..yearly
