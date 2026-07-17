@@ -19,7 +19,7 @@ from homeassistant.components.sensor import SensorDeviceClass
 from ..const import CONF_ENERGY, CONF_ENERGY_PRICE, CONF_POWER
 from ..integrator import EnergyCostIntegratorSensor
 from ..instant import INSTANT_COST_VARIANTS, InstantCostSensor
-from ..lean import build_cycle_meters
+from ..lean import build_period_meters
 from .energy import lifetime_entity_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def build(hass, device):
         )
     ]
     entities.extend(
-        build_cycle_meters(
+        build_period_meters(
             hass,
             device,
             source=f"sensor.{lifetime_slug}",

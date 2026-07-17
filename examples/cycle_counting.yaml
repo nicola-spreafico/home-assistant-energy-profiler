@@ -1,14 +1,16 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Example: cycle counting (run detection)
+# Example: run detection and cycle analytics
 # ─────────────────────────────────────────────────────────────────────────────
-# For appliances that run in discrete cycles (washing machine, dishwasher,
-# compressor). A `run` block turns on cycle tracking: the device is considered
-# "running" while its power crosses a threshold, and each run is counted with its
-# duration and energy. `limits` filters out spurious runs (too short, too small).
+# Two separate concepts:
+#   running:        the detection SIGNAL — creates binary_sensor.<prefix>_running
+#                   and nothing else. Useful on its own (automations, standby).
+#   cycle_tracking: the analytics CONSUMER — counts each run with its duration,
+#                   energy, cost, ... (requires `running:`). Owns the `limits`
+#                   used to discard spurious runs. `cycle_tracking: true` enables
+#                   it with no limits.
 #
-# NOTE: the cycles family is DEFERRED — the config below validates, but no cycle
-# entities are created yet (it is not meter-like and is migrated in a later wave).
-# The energy + cost families still work for this device today.
+# Each valid completed run fires energy_insights_monitor_cycle_completed (or
+# _cycle_discarded when limits reject it) — build notifications on those events.
 # ─────────────────────────────────────────────────────────────────────────────
 
 energy_insights_monitor:
@@ -17,28 +19,39 @@ energy_insights_monitor:
     name_suffix: _em
 
   devices:
-    # Power-threshold run detection: "on" above 5 W (after 30 s), "off" below
-    # 2 W (after 2 min) to ride out pauses within a wash program.
+    # Power-threshold detection + full analytics: "on" above 5 W (after 30 s),
+    # "off" below 2 W (after 2 min) to ride out pauses within a wash program.
     - name: washing_machine
       power: sensor.washing_machine_power
       energy: sensor.washing_machine_energy
-      run:
+      running:
         trigger: power
         on_above: 5          # W
         on_delay: "00:00:30"
         off_below: 2          # W
         off_delay: "00:02:00"
-      limits:
-        min_duration: "00:05:00"   # ignore runs shorter than 5 min
-        min_energy: 0.05           # ...or below 50 Wh
-      notify_on_complete: true
+      cycle_tracking:
+        limits:
+          min_duration: "00:05:00"   # ignore runs shorter than 5 min
+          min_energy: 0.05           # ...or below 50 Wh
 
-    # Template-based run detection: when threshold logic is not enough, drive the
+    # Template-based detection: when threshold logic is not enough, drive the
     # running state from an arbitrary template instead.
     - name: three_d_printer
       power: sensor.three_d_printer_power
       energy: sensor.three_d_printer_energy
-      run:
+      running:
         trigger: template
         available: "{{ has_value('sensor.three_d_printer_state') }}"
         state: "{{ is_state('sensor.three_d_printer_state', 'printing') }}"
+      cycle_tracking: true             # analytics with no limits
+
+    # Signal only: the running sensor exists (for automations or standby),
+    # but no cycle analytics are built.
+    - name: tv
+      power: sensor.tv_power
+      energy: sensor.tv_energy
+      running:
+        trigger: power
+        on_above: 15
+        off_below: 10

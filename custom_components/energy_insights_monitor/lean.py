@@ -22,7 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 LEAN_DOMAIN = "lean_utility_meter"
 
 # Lean cycles this integration can create. Aligned with lean/period.py.
-SUPPORTED_CYCLES = (
+SUPPORTED_PERIODS = (
     "hourly", "daily", "weekly", "monthly", "bimonthly", "quarterly", "yearly",
 )
 
@@ -34,7 +34,7 @@ def lean_available(hass: HomeAssistant) -> bool:
     return LEAN_DOMAIN in hass.config.components
 
 
-def build_cycle_meters(
+def build_period_meters(
     hass: HomeAssistant,
     device: dict,
     *,
@@ -53,13 +53,13 @@ def build_cycle_meters(
     the lean_utility_meter platform, which instantiates the actual entities.
     """
     prefix = device["prefix"]
-    cycles = device.get("cycles") or ["daily", "monthly", "yearly"]
+    periods = device.get("periods") or ["daily", "monthly", "yearly"]
     live_update_interval = device.get("live_update_interval") or DEFAULT_LIVE_UPDATE_INTERVAL
 
     specs: list[dict] = []
-    for cycle in cycles:
-        if cycle not in SUPPORTED_CYCLES:
-            _LOGGER.warning("Skipping unsupported cycle %r for %s", cycle, prefix)
+    for cycle in periods:
+        if cycle not in SUPPORTED_PERIODS:
+            _LOGGER.warning("Skipping unsupported period %r for %s", cycle, prefix)
             continue
         slug = f"{prefix}_{name_suffix}_{cycle}"
         specs.append(

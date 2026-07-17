@@ -20,7 +20,7 @@ LTS series and the same all-time entity.
 from homeassistant.components.sensor import SensorDeviceClass
 
 from ..const import CONF_ENERGY
-from ..lean import build_cycle_meters
+from ..lean import build_period_meters
 from ..lifetime import EnergyLifetimeSensor
 
 
@@ -37,7 +37,7 @@ def build(hass, device):
     entities = [
         EnergyLifetimeSensor(hass, slug=lifetime_slug, energy_source=device[CONF_ENERGY]),
     ]
-    entities += build_cycle_meters(
+    entities += build_period_meters(
         hass,
         device,
         source=f"sensor.{lifetime_slug}",

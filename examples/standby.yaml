@@ -4,7 +4,7 @@
 # Tracks the energy (and its cost) a device draws while in standby — the
 # "vampire" consumption. Everything is gated on binary_sensor.<prefix>_standby,
 # whose flavor is chosen by the `standby` option:
-#   - true                → default: standby == running off (needs a `run` block)
+#   - true                → default: standby == running off (needs a `running:` block)
 #   - trigger: power      → standby while the draw sits in the vampire range
 #   - trigger: template   → any custom condition
 #
@@ -25,14 +25,14 @@ energy_insights_monitor:
     - name: tv
       power: sensor.tv_power
       energy: sensor.tv_energy
-      run:                     # required by the default flavor
+      running:                 # required by the default flavor (standby = not running)
         trigger: power
         on_above: 15           # W — above this the TV is "on"
         off_below: 10          # W — below this it is idling
       standby: true
 
     # 2) Power flavor: standby while the draw stays in the vampire range.
-    #    No `run` block needed. Inverted thresholds vs `run`: standby starts
+    #    No `running:` block needed. Inverted thresholds vs `running:`: standby starts
     #    when power drops BELOW on_below, ends when it rises ABOVE off_above.
     - name: stereo
       power: sensor.stereo_power

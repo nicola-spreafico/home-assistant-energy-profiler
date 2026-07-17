@@ -6,6 +6,7 @@ in device.py), which mirrors the old main.py render_* orchestration.
 """
 
 from ..const import (
+    CONF_RUNNING,
     FAMILY_POWER, FAMILY_ENERGY, FAMILY_COST, FAMILY_SELF_SUFFICIENCY, FAMILY_CYCLES, FAMILY_STANDBY,
 )
 from . import power, energy, cost, self_sufficiency, cycles, standby
@@ -31,16 +32,15 @@ def build_entities(hass, device):
 
 
 def build_binary_sensors(hass, device):
-    """Return all binary_sensor-platform entities for a device.
+    """Return all binary_sensor-platform entities (the gatekeepers) for a device.
 
-    Two families contribute gatekeepers: cycles (``_running``, when the device
-    declares a ``run`` block) and standby (``_standby``, in the flavor chosen by
-    the ``standby`` option).
+    ``_running`` is a *signal*: it is created whenever the device declares a
+    ``running:`` block, whether or not the cycles analytics consume it.
+    ``_standby`` follows the ``standby`` option's flavor.
     """
-    families_enabled = device.get("families", [])
     entities = []
-    if FAMILY_CYCLES in families_enabled:
+    if device.get(CONF_RUNNING):
         entities.extend(cycles.build_binary_sensors(hass, device))
-    if FAMILY_STANDBY in families_enabled:
+    if FAMILY_STANDBY in device.get("families", []):
         entities.extend(standby.build_binary_sensors(hass, device))
     return entities

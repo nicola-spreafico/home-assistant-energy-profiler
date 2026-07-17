@@ -2,12 +2,12 @@
 
 [← Back to README](../README.md)
 
-This integration creates many entities per device, and they are **not all equal** from the recorder's point of view. Getting this section right is what keeps your database small — and, for the cycle meters, it is a **correctness requirement**, not an optimization.
+This integration creates many entities per device, and they are **not all equal** from the recorder's point of view. Getting this section right is what keeps your database small — and, for the period meters, it is a **correctness requirement**, not an optimization.
 
 ## The three classes of entities
 
-**1. Cycle meters — must NOT be recorded.**
-Every per-cycle meter (`…_energy_daily`, `…_energy_cost_monthly`, `…_cycles_count_yearly`, every entity ending in a cycle suffix: `_hourly`, `_daily`, `_weekly`, `_monthly`, `_bimonthly`, `_quarterly`, `_yearly`) is backed by the Lean core and **writes its own long-term statistics** — one consolidated row per cycle. If the recorder also records these entities, Home Assistant compiles its own hourly statistics *into the same series*: you get duplicate rows on two different baselines, and the graphs show impossible jumps. This is not hypothetical — see [What happens if you get it wrong](#what-happens-if-you-get-it-wrong).
+**1. Period meters — must NOT be recorded.**
+Every per-period meter (`…_energy_daily`, `…_energy_cost_monthly`, `…_cycles_count_yearly`, every entity ending in a period suffix: `_hourly`, `_daily`, `_weekly`, `_monthly`, `_bimonthly`, `_quarterly`, `_yearly`) is backed by the Lean core and **writes its own long-term statistics** — one consolidated row per period. If the recorder also records these entities, Home Assistant compiles its own hourly statistics *into the same series*: you get duplicate rows on two different baselines, and the graphs show impossible jumps. This is not hypothetical — see [What happens if you get it wrong](#what-happens-if-you-get-it-wrong).
 
 **2. Live/accumulator entities — recording is pure bloat.**
 The `…_lifetime` accumulators, the instantaneous projections (`…_energy_cost_instant_*`), the in-progress cycle views (`…_cycle_live_*`), the power split (`…_power_from_self/grid`) and `…_standby_duration` update very frequently (some on every power tick). They survive restarts through Home Assistant's state restore mechanism, so the recorder adds nothing but thousands of rows per day. Exclude them.
@@ -57,7 +57,7 @@ recorder:
 
 ### Include-based (whitelist) systems
 
-If your recorder already works as a whitelist, simply add the useful entities to the include list — everything else, cycle meters included, stays out with no extra work:
+If your recorder already works as a whitelist, simply add the useful entities to the include list — everything else, period meters included, stays out with no extra work:
 
 ```yaml
 recorder:
@@ -71,14 +71,14 @@ recorder:
       - binary_sensor.washing_machine_em_running
 ```
 
-> ⚠️ **Do not include broadly and carve out with exclude.** It is tempting to write `include: entity_globs: [sensor.washing_machine_em_*]` plus an `exclude:` for the meters. It does not work: in Home Assistant's recorder filter, **a match on an include glob wins over the exclude glob**, so the cycle meters end up recorded anyway. Include narrowly instead, as shown above.
+> ⚠️ **Do not include broadly and carve out with exclude.** It is tempting to write `include: entity_globs: [sensor.washing_machine_em_*]` plus an `exclude:` for the meters. It does not work: in Home Assistant's recorder filter, **a match on an include glob wins over the exclude glob**, so the period meters end up recorded anyway. Include narrowly instead, as shown above.
 
 ## Self-check: Repairs
 
-You don't have to take it on faith. Shortly after startup, the Lean core checks every cycle meter against the *actual* recorder filter and raises a **Repair** (Settings → Repairs, `recorder_not_excluded_<entity_id>`) for each meter the recorder would record. A clean setup shows none of them. One warning per meter of a freshly-added device is the typical symptom of a missing or wrong recorder block.
+You don't have to take it on faith. Shortly after startup, the Lean core checks every period meter against the *actual* recorder filter and raises a **Repair** (Settings → Repairs, `recorder_not_excluded_<entity_id>`) for each meter the recorder would record. A clean setup shows none of them. One warning per meter of a freshly-added device is the typical symptom of a missing or wrong recorder block.
 
 ## What happens if you get it wrong
 
 Nothing crashes — which is exactly the problem. The recorder silently compiles hourly statistics into the same long-term series the Lean meters maintain, on a different cumulative baseline. Days later, the energy graphs show duplicated or negative bars.
 
-Recovery is supported but explicit: fix the recorder config, restart, then run `lean_utility_meter.thin_history` on each affected meter (the cycle meters are native Lean entities) — it rebuilds the series keeping only the consolidated per-cycle rows (and clears the accumulated short-term statistics and state rows too). Take a database backup first; the operation deletes data by design.
+Recovery is supported but explicit: fix the recorder config, restart, then run `lean_utility_meter.thin_history` on each affected meter (the period meters are native Lean entities) — it rebuilds the series keeping only the consolidated per-period rows (and clears the accumulated short-term statistics and state rows too). Take a database backup first; the operation deletes data by design.

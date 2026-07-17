@@ -2,7 +2,7 @@
 # Example: basic per-device consumption
 # ─────────────────────────────────────────────────────────────────────────────
 # The minimum useful setup: track a single appliance's energy and cost across
-# daily / monthly / yearly cycles. Requires only the device's own power and
+# daily / monthly / yearly periods. Requires only the device's own power and
 # energy sensors, plus a price entity for the cost family.
 #
 # Entities created (prefix = <name> + name_suffix):

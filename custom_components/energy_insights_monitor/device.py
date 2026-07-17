@@ -3,8 +3,14 @@
 `build_device_config` merges a device's YAML against the shared defaults and
 decides which entity *families* it gets — the same conditional logic that lived
 in the old generator's `main.py` (render_basics, render_self_sufficiency, ...).
+
+Signals vs consumers: `running:` alone only creates the running gatekeeper
+(built by the binary_sensor platform based on its presence, outside the family
+selection). The cycles *family* is the analytics consumer and requires both
+`running:` and `cycle_tracking:`.
 """
 
+import logging
 from typing import Any
 
 from .const import (
@@ -12,9 +18,10 @@ from .const import (
     CONF_SELF_SUFFICIENCY_SOURCE,
     CONF_NAME_SUFFIX,
     CONF_LIVE_UPDATE_INTERVAL,
-    CONF_CYCLES,
+    CONF_PERIODS,
     CONF_NAME,
-    CONF_RUN,
+    CONF_RUNNING,
+    CONF_CYCLE_TRACKING,
     CONF_STANDBY,
     FAMILY_POWER,
     FAMILY_ENERGY,
@@ -24,8 +31,10 @@ from .const import (
     FAMILY_STANDBY,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 # Keys that a device may override from `defaults`.
-_INHERITABLE = (CONF_ENERGY_PRICE, CONF_SELF_SUFFICIENCY_SOURCE, CONF_LIVE_UPDATE_INTERVAL, CONF_CYCLES)
+_INHERITABLE = (CONF_ENERGY_PRICE, CONF_SELF_SUFFICIENCY_SOURCE, CONF_LIVE_UPDATE_INTERVAL, CONF_PERIODS)
 
 
 def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
@@ -51,9 +60,16 @@ def _enabled_families(resolved: dict[str, Any]) -> list[str]:
     if resolved.get(CONF_SELF_SUFFICIENCY_SOURCE):
         families.append(FAMILY_SELF_SUFFICIENCY)
 
-    # cycle tracking (running counters/durations) only if a `run` block is given
-    if resolved.get(CONF_RUN):
-        families.append(FAMILY_CYCLES)
+    # run-cycle analytics: an explicit consumer of the running signal
+    if resolved.get(CONF_CYCLE_TRACKING) is not None:
+        if resolved.get(CONF_RUNNING):
+            families.append(FAMILY_CYCLES)
+        else:
+            _LOGGER.warning(
+                "Device %s enables cycle_tracking but has no 'running' block; the "
+                "analytics need the running signal — skipping the cycles family",
+                resolved["prefix"],
+            )
 
     # standby (+cost) energy tracking
     if resolved.get(CONF_STANDBY):

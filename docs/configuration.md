@@ -4,13 +4,19 @@
 
 Everything lives under a single `energy_insights_monitor:` block: one global `defaults` section plus a `devices` list. What each device enables is decided by **which options it declares** — there are no `enable_x: true` switches:
 
-| You provide… | You get (the "family") |
+| You provide… | You get |
 | --- | --- |
-| `power` + `energy` (required) | **power** + **energy** — peak power, all-time total, per-cycle energy meters |
-| `energy_price` | **cost** — € accumulators, per-cycle cost meters, instant cost rates |
-| `self_sufficiency_source` | **self-sufficiency** — solar/grid split (power, energy, %), and with a price also savings/grid-cost |
-| `run:` block | **cycles** — run detection, per-cycle analytics, completed/live/mean values, events |
-| `standby:` (bool or trigger block) | **standby** — idle energy and its cost; `true` gates on running-off, a trigger block defines a custom condition |
+| `power` + `energy` (required) | **power** + **energy** families — peak power, all-time total, per-period energy meters |
+| `energy_price` | **cost** family — € accumulators, per-period cost meters, instant cost rates |
+| `self_sufficiency_source` | **self-sufficiency** family — solar/grid split (power, energy, %), and with a price also savings/grid-cost |
+| `running:` block | the running **signal**: `binary_sensor.<prefix>_running`, nothing else |
+| `cycle_tracking:` (needs `running:`) | **cycles** family — per-run analytics: completed/live/mean values, counters, events |
+| `standby:` (bool or trigger block) | **standby** family — idle energy and its cost, gated on `binary_sensor.<prefix>_standby` |
+
+Two vocabulary notes, deliberate and consistent across docs and entities:
+
+- **periods** are the Lean meter windows (`daily`, `monthly`, …) — the `periods` option;
+- **cycles** are appliance runs (a wash program, an A/C session) — the `running:` signal and the `cycle_tracking:` analytics.
 
 The full entity output of each family is cataloged in [Entities](entities.md).
 
@@ -25,8 +31,8 @@ Global values inherited by every device that does not override them.
 | `energy_price` | entity id | — | Sensor with the current energy purchase price (€/kWh). Enables the **cost** family for all devices |
 | `self_sufficiency_source` | entity id | — | Sensor with the instantaneous home self-sufficiency percentage (0–100, e.g. solar production vs consumption). Enables the **self-sufficiency** family |
 | `name_suffix` | string | `_em` | Appended to each device `name` to form the entity prefix (`<name><name_suffix>`); useful to namespace the whole fleet |
-| `live_update_interval` | duration | `00:05:00` | Throttle for the Lean meters' live LTS upserts (cycle boundaries are always written exactly). Passed through to every cycle meter |
-| `cycles` | list | `[daily, monthly, yearly]` | Which per-cycle meters every device gets: `hourly`, `daily`, `weekly`, `monthly`, `bimonthly`, `quarterly`, `yearly` |
+| `live_update_interval` | duration | `00:05:00` | Throttle for the Lean meters' live LTS upserts (period boundaries are always written exactly). Passed through to every meter |
+| `periods` | list | `[daily, monthly, yearly]` | Which per-period meters every device gets: `hourly`, `daily`, `weekly`, `monthly`, `bimonthly`, `quarterly`, `yearly` |
 
 ## Device base options
 
@@ -35,21 +41,21 @@ Global values inherited by every device that does not override them.
 | `name` | slug | ✔ | Device slug; with `name_suffix` it forms the prefix of every entity id (`washing_machine` → `sensor.washing_machine_em_…`) |
 | `power` | entity id | ✔ | The device's instantaneous power sensor (W) |
 | `energy` | entity id | ✔ | The device's cumulative energy sensor (kWh). Resets and sensor swaps are tolerated: the integration accumulates only positive deltas into its own lifetime total |
-| `switch` | entity id | — | The plug/switch powering the device. Accepted for forward compatibility; **no entity currently uses it** |
 | `energy_price` | entity id or `null` | — | Per-device override of the default. Set `null` to opt this device **out** of the cost family even when a default is configured |
 | `self_sufficiency_source` | entity id or `null` | — | Per-device override; `null` opts out of the self-sufficiency family |
 | `live_update_interval` | duration | — | Per-device override of the default |
-| `cycles` | list | — | Per-device override of the default cycle set |
-| `notify_on_complete` | boolean | `false` | Accepted for config compatibility with the legacy generator, **currently a no-op**: build your own automation on the `energy_insights_monitor_cycle_completed` event instead |
+| `periods` | list | — | Per-device override of the default period set |
 
-## Run detection (`run:`)
+## Running detection (`running:`)
 
-Declaring a `run:` block enables the **cycles** family and creates `binary_sensor.<prefix>_running`, the gatekeeper every cycle and standby computation hangs on. Two trigger flavors:
+A **signal**: declaring it creates `binary_sensor.<prefix>_running` and nothing else. Consumers hang on it explicitly: [`cycle_tracking:`](#cycle-analytics-cycle_tracking) for run analytics, and the default flavor of [`standby:`](#standby-standby). It is also perfectly fine on its own, e.g. to drive your own automations.
+
+Two trigger flavors:
 
 **Power threshold** — for appliances recognizable by their draw:
 
 ```yaml
-run:
+running:
   trigger: power
   on_above: 5          # W: running when power rises above this…
   on_delay: "00:00:30" # …for at least this long (default 0 = immediately)
@@ -61,13 +67,13 @@ run:
 | --- | --- | --- |
 | `on_above` | `0` | power (W) above which the device counts as running |
 | `off_below` | `1` | power (W) below which it counts as stopped |
-| `on_delay` | `00:00:00` | how long the power must stay above `on_above` before the cycle opens (debounces spikes) |
-| `off_delay` | `00:00:00` | how long it must stay below `off_below` before the cycle closes (bridges intra-cycle pauses, e.g. a dishwasher heating phase) |
+| `on_delay` | `00:00:00` | how long the power must stay above `on_above` before turning on (debounces spikes) |
+| `off_delay` | `00:00:00` | how long it must stay below `off_below` before turning off (bridges intra-run pauses, e.g. a dishwasher heating phase) |
 
 **Template** — when a better signal than power exists (a `climate` state, a helper, …):
 
 ```yaml
-run:
+running:
   trigger: template
   available: "{{ has_value('climate.bedroom_ac') }}"
   state: "{{ states('climate.bedroom_ac') != 'off' }}"
@@ -78,19 +84,24 @@ run:
 | `state` | ✔ | template that renders truthy while the device is running |
 | `available` | ✔ | template that renders truthy when the signal itself is trustworthy; while false the running sensor goes unavailable instead of guessing |
 
-## Cycle limits (`limits:`)
+## Cycle analytics (`cycle_tracking:`)
 
-Optional plausibility checks applied when a cycle closes. A cycle failing any of them is **discarded**: its snapshot/completed/validation sensors are still written (so you can inspect it), but it does not increment the counters, totals or means, and the `…_cycle_discarded` event fires instead of `…_cycle_completed`.
+The analytics **consumer** of the running signal: counts each run with its duration, energy, cost, solar split, … (the full output is in [Entities](entities.md#cycles--requires-running-and-cycle_tracking)). Requires `running:`; without it the family is skipped with a warning.
 
 ```yaml
-limits:
-  min_duration: "00:05:00"
-  max_duration: "12:00:00"
-  min_energy: 0.05   # kWh
-  max_energy: 10.0   # kWh
+cycle_tracking: true          # analytics, no plausibility limits
+# or
+cycle_tracking:
+  limits:
+    min_duration: "00:05:00"
+    max_duration: "12:00:00"
+    min_energy: 0.05   # kWh
+    max_energy: 10.0   # kWh
 ```
 
-| Option | Rejected as |
+`limits` are optional plausibility checks applied when a run ends. A run failing any of them is **discarded**: its snapshot/completed/validation sensors are still written (so you can inspect it), but it does not increment the counters, totals or means, and the `…_cycle_discarded` event fires instead of `…_cycle_completed`.
+
+| Limit | Rejected as |
 | --- | --- |
 | `min_duration` | `too_short` |
 | `max_duration` | `too_long` |
@@ -103,13 +114,13 @@ The verdict (or `valid`) is exposed by `sensor.<prefix>_cycle_validation_status`
 
 Enables the **standby** family: energy accumulated while the device is in standby (plus its cost, when priced), gated on a dedicated `binary_sensor.<prefix>_standby`. Three flavors:
 
-**Default** — standby is simply "not running". Requires the `run:` block (without running detection there is no notion of "idle"; the family is skipped with a warning). The standby sensor mirrors `…_running` inverted, and follows its availability:
+**Default** — standby is simply "not running". Requires the `running:` block (without the signal there is no notion of "idle"; the family is skipped with a warning) — but **not** `cycle_tracking`: a device can define running purely to give standby its complement. The standby sensor mirrors `…_running` inverted, and follows its availability:
 
 ```yaml
 standby: true
 ```
 
-**Power threshold** — standby while the draw sits in the vampire range. Does **not** require `run:`. Thresholds are inverted with respect to `run:` (standby is entered going *down*):
+**Power threshold** — standby while the draw sits in the vampire range. Does **not** require `running:`. Thresholds are inverted with respect to `running:` (standby is entered going *down*):
 
 ```yaml
 standby:
@@ -120,7 +131,7 @@ standby:
   off_delay: "00:00:10"  # …for at least this long (default 0)
 ```
 
-**Template** — any custom condition (a `media_player` state, a helper, …). Does **not** require `run:`:
+**Template** — any custom condition (a `media_player` state, a helper, …). Does **not** require `running:`:
 
 ```yaml
 standby:
@@ -133,4 +144,4 @@ Whatever the flavor, energy is attributed to standby only while the gatekeeper i
 
 ## Full example
 
-See [`examples/full.yaml`](../examples/full.yaml) for a fleet mixing all of the above: shared defaults, a plain consumption device, a solar-split device, a cycle-tracked washing machine with limits, and a TV with standby tracking.
+See [`examples/full.yaml`](../examples/full.yaml) for a fleet mixing all of the above: shared defaults, a plain consumption device, a solar-split device, a cycle-tracked washing machine with limits, a TV with running + standby but no analytics, and a stereo with standalone standby.

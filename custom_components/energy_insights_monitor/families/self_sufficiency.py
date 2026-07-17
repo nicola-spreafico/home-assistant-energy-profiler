@@ -24,7 +24,7 @@ from homeassistant.components.sensor import SensorDeviceClass
 
 from ..const import CONF_ENERGY_PRICE, CONF_SELF_SUFFICIENCY_SOURCE
 from ..integrator import EnergyCostIntegratorSensor
-from ..lean import build_cycle_meters
+from ..lean import build_period_meters
 from ..split import EnergyBalancerSensor, SplitPartnerSensor, SelfSufficiencyRatioSensor
 from .energy import lifetime_entity_id
 
@@ -44,7 +44,6 @@ def build(hass, device):
 
     prefix = device["prefix"]
     price = device.get(CONF_ENERGY_PRICE)
-    cycles = device.get("cycles") or ["daily", "monthly", "yearly"]
 
     from_self_lifetime = f"{prefix}_energy_from_self_lifetime"
     from_grid_lifetime = f"{prefix}_energy_from_grid_lifetime"
@@ -64,13 +63,13 @@ def build(hass, device):
     )
     entities = [from_self, from_grid]
 
-    entities += build_cycle_meters(
+    entities += build_period_meters(
         hass, device,
         source=f"sensor.{from_self_lifetime}",
         name_suffix="energy_from_self",
         unit="kWh", device_class=SensorDeviceClass.ENERGY,
     )
-    entities += build_cycle_meters(
+    entities += build_period_meters(
         hass, device,
         source=f"sensor.{from_grid_lifetime}",
         name_suffix="energy_from_grid",
@@ -99,13 +98,13 @@ def build(hass, device):
                 icon=ICON_GRID_COST,
             ),
         ]
-        entities += build_cycle_meters(
+        entities += build_period_meters(
             hass, device,
             source=f"sensor.{savings_lifetime}",
             name_suffix="energy_from_grid_savings",
             unit="€", device_class=SensorDeviceClass.MONETARY,
         )
-        entities += build_cycle_meters(
+        entities += build_period_meters(
             hass, device,
             source=f"sensor.{grid_cost_lifetime}",
             name_suffix="energy_from_grid_cost",
@@ -126,7 +125,7 @@ def build(hass, device):
             denominator=lifetime_entity_id(prefix),
         )
     )
-    entities += build_cycle_meters(
+    entities += build_period_meters(
         hass, device,
         source=f"sensor.{ss_lifetime}",
         name_suffix="energy_self_sufficiency",

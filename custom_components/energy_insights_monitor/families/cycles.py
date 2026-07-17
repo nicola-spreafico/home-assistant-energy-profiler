@@ -14,7 +14,8 @@ timestamps.
 
 from ..const import (
     CONF_POWER,
-    CONF_RUN,
+    CONF_RUNNING,
+    CONF_CYCLE_TRACKING,
     CONF_TRIGGER,
     CONF_ON_ABOVE,
     CONF_OFF_BELOW,
@@ -35,8 +36,9 @@ def running_entity_id(prefix: str) -> str:
 
 def build(hass, device):
     """All sensor-platform cycle entities (snapshots, completed, live, means, meters)."""
-    run = device.get(CONF_RUN)
-    if not run:
+    run = device.get(CONF_RUNNING)
+    tracking = device.get(CONF_CYCLE_TRACKING)
+    if not run or tracking is None:
         return []
 
     from homeassistant.components.sensor import SensorDeviceClass
@@ -54,7 +56,7 @@ def build(hass, device):
         MeanSensor,
         ScaledRatioSensor,
     )
-    from ..lean import build_cycle_meters
+    from ..lean import build_period_meters
     from ..split import SelfSufficiencyRatioSensor
 
     prefix = device["prefix"]
@@ -168,7 +170,7 @@ def build(hass, device):
         start_snapshot=start_snap,
         stop_snapshot=stop_snap,
         validation=validation,
-        limits=device.get(CONF_LIMITS) or {},
+        limits=tracking.get(CONF_LIMITS) or {},
         on_delay=run.get(CONF_ON_DELAY),
         off_delay=run.get(CONF_OFF_DELAY),
         completed_self_sufficiency=completed_ss,
@@ -177,14 +179,18 @@ def build(hass, device):
     entities.append(tracker)
 
     # Cumulative count / duration -> Lean per-period meters.
-    entities += build_cycle_meters(hass, device, source=f"sensor.{count_lifetime}", name_suffix="cycles_count", unit=None, device_class=None)
-    entities += build_cycle_meters(hass, device, source=f"sensor.{duration_lifetime}", name_suffix="cycles_duration", unit="s", device_class=DURATION)
+    entities += build_period_meters(hass, device, source=f"sensor.{count_lifetime}", name_suffix="cycles_count", unit=None, device_class=None)
+    entities += build_period_meters(hass, device, source=f"sensor.{duration_lifetime}", name_suffix="cycles_duration", unit="s", device_class=DURATION)
     return entities
 
 
 def build_binary_sensors(hass, device):
-    """Return the ``_running`` binary sensor if the device declares a ``run`` block."""
-    run = device.get(CONF_RUN)
+    """Return the ``_running`` binary sensor if the device declares a ``running:`` block.
+
+    The signal is independent from the analytics: it is built whenever the
+    detection is configured, even with no ``cycle_tracking``.
+    """
+    run = device.get(CONF_RUNNING)
     if not run:
         return []
 

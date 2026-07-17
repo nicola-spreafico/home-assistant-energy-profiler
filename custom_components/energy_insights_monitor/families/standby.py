@@ -7,9 +7,9 @@ Everything is gated on a first-class ``binary_sensor.<prefix>_standby``
 gatekeeper, whose flavor is chosen by the ``standby`` option:
 
 - ``standby: true`` — the default: standby is simply "``_running`` is off"
-  (requires the cycles ``run`` block; skipped with a warning otherwise);
+  (requires the ``running`` block; skipped with a warning otherwise);
 - ``standby: {trigger: power, on_below: ...}`` — standby when the power draw
-  stays inside the vampire range (inverted thresholds vs ``run``);
+  stays inside the vampire range (inverted thresholds vs ``running``);
 - ``standby: {trigger: template, ...}`` — a custom condition.
 
 While the gatekeeper is on, a :class:`StandbyEnergyAccumulator` accumulates the
@@ -29,13 +29,13 @@ from ..const import (
     CONF_ON_BELOW,
     CONF_ON_DELAY,
     CONF_POWER,
-    CONF_RUN,
+    CONF_RUNNING,
     CONF_STANDBY,
     CONF_STATE,
     CONF_TRIGGER,
 )
 from ..integrator import EnergyCostIntegratorSensor
-from ..lean import build_cycle_meters
+from ..lean import build_period_meters
 from ..lifetime import StandbyEnergyAccumulator
 from .cycles import running_entity_id
 from .energy import lifetime_entity_id
@@ -49,8 +49,8 @@ def standby_entity_id(prefix: str) -> str:
 
 
 def _default_mode_misconfigured(device) -> bool:
-    """True when `standby: true` was requested without the `run` block it needs."""
-    return device.get(CONF_STANDBY) is True and not device.get(CONF_RUN)
+    """True when `standby: true` was requested without the `running` block it needs."""
+    return device.get(CONF_STANDBY) is True and not device.get(CONF_RUNNING)
 
 
 def build_binary_sensors(hass, device):
@@ -62,9 +62,9 @@ def build_binary_sensors(hass, device):
     prefix = device["prefix"]
     if _default_mode_misconfigured(device):
         _LOGGER.warning(
-            "Device %s enables standby (default flavor) but has no 'run' block; the "
+            "Device %s enables standby (default flavor) but has no 'running' block; the "
             "default gates on running=off, so it needs running detection — skipping "
-            "standby family. Use a custom standby trigger to go without 'run'.",
+            "standby family. Use a custom standby trigger to go without 'running'.",
             prefix,
         )
         return []
@@ -128,7 +128,7 @@ def build(hass, device):
             hass, slug=f"{prefix}_standby_duration", standby_entity=standby_entity_id(prefix),
         ),
     ]
-    entities += build_cycle_meters(
+    entities += build_period_meters(
         hass, device,
         source=f"sensor.{standby_lifetime}",
         name_suffix="standby_energy",
@@ -146,7 +146,7 @@ def build(hass, device):
                 icon="mdi:cash-clock",
             )
         )
-        entities += build_cycle_meters(
+        entities += build_period_meters(
             hass, device,
             source=f"sensor.{standby_cost_lifetime}",
             name_suffix="standby_energy_cost",

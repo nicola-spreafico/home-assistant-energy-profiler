@@ -3,6 +3,15 @@
 Mirrors the shape of the old generator's ``config.jsonc`` (globals + devices),
 but validated at load time so typos surface as clear errors instead of silently
 broken Jinja.
+
+The device model separates *signals* from *consumers*:
+- ``running:`` — a signal: defines the running detection and creates
+  ``binary_sensor.<prefix>_running``, nothing else;
+- ``cycle_tracking:`` — a consumer: run-cycle analytics over the running signal
+  (owns its ``limits``); requires ``running:``;
+- ``standby:`` — signal + consumer: the standby gatekeeper (default flavor =
+  "not running", or a custom power/template condition) and the standby energy
+  family gated on it.
 """
 
 import voluptuous as vol
@@ -17,15 +26,14 @@ from .const import (
     CONF_SELF_SUFFICIENCY_SOURCE,
     CONF_NAME_SUFFIX,
     CONF_LIVE_UPDATE_INTERVAL,
-    CONF_CYCLES,
+    CONF_PERIODS,
     CONF_NAME,
     CONF_POWER,
     CONF_ENERGY,
-    CONF_SWITCH,
-    CONF_RUN,
+    CONF_RUNNING,
+    CONF_CYCLE_TRACKING,
     CONF_LIMITS,
     CONF_STANDBY,
-    CONF_NOTIFY_ON_COMPLETE,
     CONF_TRIGGER,
     CONF_ON_ABOVE,
     CONF_ON_DELAY,
@@ -36,13 +44,13 @@ from .const import (
     CONF_AVAILABLE,
     CONF_STATE,
     DEFAULT_NAME_SUFFIX,
-    DEFAULT_CYCLES,
+    DEFAULT_PERIODS,
 )
 
-CYCLE = vol.In(["hourly", "daily", "weekly", "monthly", "bimonthly", "quarterly", "yearly"])
+PERIOD = vol.In(["hourly", "daily", "weekly", "monthly", "bimonthly", "quarterly", "yearly"])
 
-# run: — presence enables cycle tracking. Two trigger flavors: power threshold or template.
-RUN_SCHEMA = vol.Any(
+# running: — the detection signal. Two trigger flavors: power threshold or template.
+RUNNING_SCHEMA = vol.Any(
     vol.Schema(
         {
             vol.Required(CONF_TRIGGER): "power",
@@ -62,11 +70,11 @@ RUN_SCHEMA = vol.Any(
 )
 
 # standby: — boolean or a custom condition. `true` keeps the default gating
-# (standby == running off, needs the `run` block); a trigger block defines an
-# independent standby condition, mirroring the `run` flavors. The power flavor
-# has inverted threshold semantics: standby starts when power *drops below*
-# `on_below` (for `on_delay`) and ends when it *rises above* `off_above`
-# (default: same as on_below) for `off_delay`.
+# (standby == running off, needs `running:`); a trigger block defines an
+# independent standby condition. The power flavor has inverted threshold
+# semantics: standby starts when power *drops below* `on_below` (for
+# `on_delay`) and ends when it *rises above* `off_above` (default: same as
+# on_below) for `off_delay`.
 STANDBY_SCHEMA = vol.Any(
     cv.boolean,
     vol.Schema(
@@ -96,13 +104,33 @@ LIMITS_SCHEMA = vol.Schema(
     }
 )
 
+
+def _normalize_cycle_tracking(value):
+    """Allow `cycle_tracking: true` as shorthand for an empty options block."""
+    if value is True:
+        return {}
+    if value is False:
+        return None
+    return value
+
+
+# cycle_tracking: — run-cycle analytics over the running signal. `true` is a
+# shorthand for "enabled with no limits".
+CYCLE_TRACKING_SCHEMA = vol.All(
+    vol.Any(
+        cv.boolean,
+        vol.Schema({vol.Optional(CONF_LIMITS): LIMITS_SCHEMA}),
+    ),
+    _normalize_cycle_tracking,
+)
+
 DEFAULTS_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_ENERGY_PRICE): cv.entity_id,
         vol.Optional(CONF_SELF_SUFFICIENCY_SOURCE): cv.entity_id,
         vol.Optional(CONF_NAME_SUFFIX, default=DEFAULT_NAME_SUFFIX): cv.string,
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
-        vol.Optional(CONF_CYCLES, default=DEFAULT_CYCLES): vol.All(cv.ensure_list, [CYCLE]),
+        vol.Optional(CONF_PERIODS, default=DEFAULT_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
     }
 )
 
@@ -111,18 +139,16 @@ DEVICE_SCHEMA = vol.Schema(
         vol.Required(CONF_NAME): cv.slug,
         vol.Required(CONF_POWER): cv.entity_id,
         vol.Required(CONF_ENERGY): cv.entity_id,
-        vol.Optional(CONF_SWITCH): cv.entity_id,
         # Per-device overrides of the shared defaults. `null` explicitly opts the
         # device out of the corresponding family even when a default is set.
         vol.Optional(CONF_ENERGY_PRICE): vol.Any(None, cv.entity_id),
         vol.Optional(CONF_SELF_SUFFICIENCY_SOURCE): vol.Any(None, cv.entity_id),
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
-        vol.Optional(CONF_CYCLES): vol.All(cv.ensure_list, [CYCLE]),
-        # Cycle tracking (optional): presence of `run` turns it on
-        vol.Optional(CONF_RUN): RUN_SCHEMA,
-        vol.Optional(CONF_LIMITS): LIMITS_SCHEMA,
+        vol.Optional(CONF_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
+        # Signals and their consumers.
+        vol.Optional(CONF_RUNNING): RUNNING_SCHEMA,
+        vol.Optional(CONF_CYCLE_TRACKING): CYCLE_TRACKING_SCHEMA,
         vol.Optional(CONF_STANDBY, default=False): STANDBY_SCHEMA,
-        vol.Optional(CONF_NOTIFY_ON_COMPLETE, default=False): cv.boolean,
     }
 )
 
