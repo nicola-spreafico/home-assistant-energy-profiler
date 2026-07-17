@@ -10,7 +10,7 @@ Each entity carries two markers:
   - 🚫 *never record* — a Lean cycle meter that writes its own long-term statistics; recording it corrupts the series
   - 💤 *exclude* — live view or restore-based accumulator; recording is pure database bloat
   - 📈 *worth recording* — changes at meaningful moments; its state history is useful
-- **↺ resettable** — supports the `energy_insights_monitor.reset` entity service (zeroes the value).
+- **↺ resettable** — supports the `energy_insights_monitor.reset` entity service (zeroes the value). The 🚫 cycle meters are native Lean entities instead, maintained via Lean's own services — see [Services & Actions](services.md).
 
 ## Power — always on
 
