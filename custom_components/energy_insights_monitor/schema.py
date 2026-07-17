@@ -24,6 +24,8 @@ from .const import (
     CONF_DEVICES,
     CONF_ENERGY_PRICE,
     CONF_SELF_SUFFICIENCY_SOURCE,
+    CONF_SOLAR_SHARE_SOURCE,
+    CONF_BATTERY_SHARE_SOURCE,
     CONF_NAME_SUFFIX,
     CONF_LIVE_UPDATE_INTERVAL,
     CONF_PERIODS,
@@ -128,6 +130,10 @@ DEFAULTS_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_ENERGY_PRICE): cv.entity_id,
         vol.Optional(CONF_SELF_SUFFICIENCY_SOURCE): cv.entity_id,
+        # Second-level split of the self share (solar vs battery): provide ONE
+        # of the two percentages — the other side is the exact complement.
+        vol.Exclusive(CONF_SOLAR_SHARE_SOURCE, "self_split"): cv.entity_id,
+        vol.Exclusive(CONF_BATTERY_SHARE_SOURCE, "self_split"): cv.entity_id,
         vol.Optional(CONF_NAME_SUFFIX, default=DEFAULT_NAME_SUFFIX): cv.string,
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PERIODS, default=DEFAULT_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
@@ -143,6 +149,8 @@ DEVICE_SCHEMA = vol.Schema(
         # device out of the corresponding family even when a default is set.
         vol.Optional(CONF_ENERGY_PRICE): vol.Any(None, cv.entity_id),
         vol.Optional(CONF_SELF_SUFFICIENCY_SOURCE): vol.Any(None, cv.entity_id),
+        vol.Exclusive(CONF_SOLAR_SHARE_SOURCE, "self_split"): vol.Any(None, cv.entity_id),
+        vol.Exclusive(CONF_BATTERY_SHARE_SOURCE, "self_split"): vol.Any(None, cv.entity_id),
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
         # Signals and their consumers.

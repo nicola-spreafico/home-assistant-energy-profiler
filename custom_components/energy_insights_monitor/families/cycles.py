@@ -26,6 +26,8 @@ from ..const import (
     CONF_LIMITS,
     CONF_ENERGY_PRICE,
     CONF_SELF_SUFFICIENCY_SOURCE,
+    CONF_SOLAR_SHARE_SOURCE,
+    CONF_BATTERY_SHARE_SOURCE,
 )
 
 
@@ -109,6 +111,15 @@ def build(hass, device):
         metric("from_grid", f"{prefix}_energy_from_grid_lifetime", f"{prefix}_cycle_completed_energy_from_grid",
                f"{prefix}_cycles_energy_from_grid_mean", f"{prefix}_cycles_energy_from_grid_lifetime",
                f"{prefix}_cycle_live_energy_from_grid", "kWh", ENERGY, "mdi:transmission-tower")
+    # Second-level split of self (solar vs battery): e.g. how much sun vs how
+    # much battery a washing-machine run actually used.
+    if has_self and (device.get(CONF_SOLAR_SHARE_SOURCE) or device.get(CONF_BATTERY_SHARE_SOURCE)):
+        metric("from_solar", f"{prefix}_energy_from_solar_lifetime", f"{prefix}_cycle_completed_energy_from_solar",
+               f"{prefix}_cycles_energy_from_solar_mean", f"{prefix}_cycles_energy_from_solar_lifetime",
+               f"{prefix}_cycle_live_energy_from_solar", "kWh", ENERGY, "mdi:weather-sunny")
+        metric("from_battery", f"{prefix}_energy_from_battery_lifetime", f"{prefix}_cycle_completed_energy_from_battery",
+               f"{prefix}_cycles_energy_from_battery_mean", f"{prefix}_cycles_energy_from_battery_lifetime",
+               f"{prefix}_cycle_live_energy_from_battery", "kWh", ENERGY, "mdi:home-battery")
     if price and has_self:
         metric("savings", f"{prefix}_energy_from_grid_savings_lifetime", f"{prefix}_cycle_completed_energy_from_grid_savings",
                f"{prefix}_cycles_energy_from_grid_savings_mean", f"{prefix}_cycles_energy_from_grid_savings_lifetime",

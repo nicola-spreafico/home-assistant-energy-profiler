@@ -23,7 +23,8 @@ Calling it on an entity that has nothing to reset (means, live views, snapshots)
 | `sensor.<p>_power_max` | start a fresh peak-power measurement |
 | `sensor.<base>_lifetime` | restart an energy group's all-time total (`<base>` = `<p>_energy`, `<p>_running_energy` or `<p>_standby_energy`) |
 | `sensor.<base>_cost_lifetime` | restart a group's cost total |
-| `sensor.<base>_from_self_lifetime`, `sensor.<base>_from_grid_lifetime` | restart a group's solar/grid split |
+| `sensor.<base>_from_self_lifetime`, `sensor.<base>_from_grid_lifetime` | restart a group's self/grid split |
+| `sensor.<base>_from_solar_lifetime`, `sensor.<base>_from_battery_lifetime` | restart a group's solar/battery split |
 | `sensor.<base>_from_grid_savings_lifetime`, `sensor.<base>_from_grid_cost_lifetime` | restart the monetary views of a group's split |
 | `sensor.<p>_cycles_count_lifetime` | restart the valid-cycle counter (means recompute from the new base) |
 | `sensor.<p>_cycles_duration_lifetime` | restart the total running time |
@@ -39,6 +40,7 @@ Every per-period meter — the entities ending in a period suffix (`_hourly`, `_
 - `sensor.<base>_<period>`
 - `sensor.<base>_cost_<period>`
 - `sensor.<base>_from_self_<period>` / `sensor.<base>_from_grid_<period>`
+- `sensor.<base>_from_solar_<period>` / `sensor.<base>_from_battery_<period>`
 - `sensor.<base>_from_grid_savings_<period>` / `sensor.<base>_from_grid_cost_<period>`
 - `sensor.<base>_self_sufficiency_<period>`
 

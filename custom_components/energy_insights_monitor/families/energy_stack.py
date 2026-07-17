@@ -8,7 +8,8 @@ Per group ``<base>`` (= ``<prefix>_<name_base>``), permuted over the configured
 periods:
 
 - ``<base>_lifetime`` + ``<base>_<period>``            kWh accumulator + meters
-- ``<base>_from_self`` / ``_from_grid`` (+ meters)     solar/grid split    [needs self_sufficiency_source]
+- ``<base>_from_self`` / ``_from_grid`` (+ meters)     self/grid split     [needs self_sufficiency_source]
+- ``<base>_from_solar`` / ``_from_battery`` (+ meters) self split in two   [needs solar_share_source or battery_share_source]
 - ``<base>_cost`` (+ meters)                           € at consumption    [needs energy_price]
 - ``<base>_from_grid_savings`` / ``_from_grid_cost``   € views of the split [needs both]
 - ``<base>_self_sufficiency`` (+ gauge meters)         live % ratio        [needs self_sufficiency_source]
@@ -20,7 +21,13 @@ lifetime, so every group inherits the reset/plug-swap protection.
 
 from homeassistant.components.sensor import SensorDeviceClass
 
-from ..const import CONF_ENERGY_PRICE, CONF_POWER, CONF_SELF_SUFFICIENCY_SOURCE
+from ..const import (
+    CONF_BATTERY_SHARE_SOURCE,
+    CONF_ENERGY_PRICE,
+    CONF_POWER,
+    CONF_SELF_SUFFICIENCY_SOURCE,
+    CONF_SOLAR_SHARE_SOURCE,
+)
 from ..instant import INSTANT_COST_VARIANTS, InstantCostSensor
 from ..integrator import EnergyCostIntegratorSensor
 from ..lean import build_period_meters
@@ -29,6 +36,8 @@ from ..split import EnergyBalancerSensor, SplitPartnerSensor, SelfSufficiencyRat
 
 ICON_SELF = "mdi:solar-panel"
 ICON_GRID = "mdi:transmission-tower"
+ICON_SOLAR = "mdi:weather-sunny"
+ICON_BATTERY = "mdi:home-battery"
 ICON_SAVINGS = "mdi:piggy-bank"
 ICON_GRID_COST = "mdi:cash-minus"
 
@@ -94,6 +103,40 @@ def build_stack(
             hass, device, source=f"sensor.{from_grid_lifetime}",
             name_suffix=f"{name_base}_from_grid", unit="kWh", device_class=ENERGY,
         )
+
+        # Optional second-level split of the self share: solar vs battery.
+        # Same balancer mechanism, one level down: from_self's deltas are split
+        # by the share %, so from_solar + from_battery == from_self, always.
+        # The user provides either the solar or the battery share — whichever
+        # they gave becomes the balancer, the other side is the exact remainder.
+        solar_share = device.get(CONF_SOLAR_SHARE_SOURCE)
+        battery_share = device.get(CONF_BATTERY_SHARE_SOURCE)
+        if solar_share or battery_share:
+            from_solar_lifetime = f"{base}_from_solar_lifetime"
+            from_battery_lifetime = f"{base}_from_battery_lifetime"
+            if solar_share:
+                partner = SplitPartnerSensor(hass, slug=from_battery_lifetime, icon=ICON_BATTERY)
+                balancer = EnergyBalancerSensor(
+                    hass, slug=from_solar_lifetime,
+                    energy_source=f"sensor.{from_self_lifetime}",
+                    ratio_source=solar_share, partner=partner, icon=ICON_SOLAR,
+                )
+            else:
+                partner = SplitPartnerSensor(hass, slug=from_solar_lifetime, icon=ICON_SOLAR)
+                balancer = EnergyBalancerSensor(
+                    hass, slug=from_battery_lifetime,
+                    energy_source=f"sensor.{from_self_lifetime}",
+                    ratio_source=battery_share, partner=partner, icon=ICON_BATTERY,
+                )
+            entities += [balancer, partner]
+            entities += build_period_meters(
+                hass, device, source=f"sensor.{from_solar_lifetime}",
+                name_suffix=f"{name_base}_from_solar", unit="kWh", device_class=ENERGY,
+            )
+            entities += build_period_meters(
+                hass, device, source=f"sensor.{from_battery_lifetime}",
+                name_suffix=f"{name_base}_from_battery", unit="kWh", device_class=ENERGY,
+            )
 
     # Cost: each delta priced at the tariff valid at that moment.
     if price:

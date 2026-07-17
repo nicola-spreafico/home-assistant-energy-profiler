@@ -6,7 +6,7 @@ Point it at a device's power and energy sensors and it builds the whole analytic
 
 - **Energy in three symmetric groups** — **total**, **running-only** and **standby-only**: each group exposes the same block (energy, solar/grid split, cost, savings/grid-cost, self-sufficiency %, per-period meters), so separating useful consumption from "vampire" waste never costs you the solar or cost breakdown
 - **Cost** — € accumulated at the price valid *at the moment of consumption*, projected cost rates (€/h, €/day, …)
-- **Self-sufficiency** — how much of each group's energy came from your solar production vs the grid, what it saved you and what the grid imports cost, as instantaneous power, cumulative energy and percentages
+- **Self-sufficiency** — how much of each group's energy came from your own production vs the grid, what it saved you and what the grid imports cost, as instantaneous power, cumulative energy and percentages; optionally split the self share further into **direct solar vs battery discharge** (`from_solar` / `from_battery`) — e.g. how much sun, how much battery and how much grid a washing-machine run actually used
 - **Run cycles** — detects appliance runs (dishwasher, washing machine, A/C…), validates them against duration/energy limits, and tracks per-run values, means and totals; fires events you can automate on
 - **Device status label** — a ready-made `running`/`standby`/`poweroff` enum for dashboards
 
@@ -27,12 +27,55 @@ Declare `defaults:` **exactly once**: it is the system-wide baseline every devic
 ```yaml
 energy_insights_monitor:
   defaults:
-    energy_price: sensor.energy_price_purchase             # optional: enables the cost family
-    self_sufficiency_source: sensor.home_self_sufficiency  # optional: enables the solar/grid split
+    energy_price: sensor.energy_price_purchase             # optional: enables the cost sub-block
+    self_sufficiency_source: sensor.home_self_sufficiency  # optional: enables the self/grid split
+    solar_share_source: sensor.home_solar_share_of_self    # optional: splits self into solar vs battery
     name_suffix: _em                   # entity prefix = <name> + this suffix
     live_update_interval: "00:15:00"   # throttle for the meters' live LTS upserts
     periods: [daily, monthly, yearly]  # meter windows: hourly..yearly
 ```
+
+### Computing the percentage sources
+
+The two percentage sensors the defaults point at are yours to provide — any 0–100 sensor works. If your inverter integration does not expose them directly, they derive from the instantaneous power flows with two template sensors:
+
+- `self_sufficiency_source` — the share of the house consumption covered by **any** local source: `(consumption − grid_import) / consumption`;
+- `solar_share_source` — the share **of the self-consumed energy** coming straight from the panels (the battery is the complement): `(self − battery_discharge) / self`.
+
+```yaml
+template:
+  - sensor:
+      # % of the house consumption covered by self-production (solar + battery).
+      - name: home_self_sufficiency
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: >
+          {{ has_value('sensor.house_load_power') and has_value('sensor.grid_import_power') }}
+        state: >
+          {% set load = states('sensor.house_load_power') | float(0) %}
+          {% set grid = states('sensor.grid_import_power') | float(0) %}
+          {% if load <= 0 %} 0
+          {% else %} {{ ([ [ (load - grid) / load * 100, 0 ] | max, 100 ] | min) | round(1) }}
+          {% endif %}
+
+      # % OF THE SELF share coming straight from the panels (complement = battery).
+      - name: home_solar_share_of_self
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: >
+          {{ has_value('sensor.house_load_power') and has_value('sensor.grid_import_power')
+             and has_value('sensor.battery_discharge_power') }}
+        state: >
+          {% set load = states('sensor.house_load_power') | float(0) %}
+          {% set grid = states('sensor.grid_import_power') | float(0) %}
+          {% set batt = states('sensor.battery_discharge_power') | float(0) %}
+          {% set self = load - grid %}
+          {% if self <= 0 %} 100
+          {% else %} {{ ([ [ (self - batt) / self * 100, 0 ] | max, 100 ] | min) | round(1) }}
+          {% endif %}
+```
+
+(`sensor.house_load_power`, `sensor.grid_import_power` and `sensor.battery_discharge_power` are the typical flows any hybrid-inverter integration exposes — adapt the ids. The value rendered while `self <= 0` is irrelevant: the split only consumes the percentage when self energy is actually flowing. Prefer `battery_share_source` if your system measures the battery contribution instead — the two are complementary spellings of the same split.)
 
 ### Devices — one example per configuration
 

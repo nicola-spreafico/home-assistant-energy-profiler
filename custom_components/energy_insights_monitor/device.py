@@ -16,6 +16,8 @@ from typing import Any
 from .const import (
     CONF_ENERGY_PRICE,
     CONF_SELF_SUFFICIENCY_SOURCE,
+    CONF_SOLAR_SHARE_SOURCE,
+    CONF_BATTERY_SHARE_SOURCE,
     CONF_NAME_SUFFIX,
     CONF_LIVE_UPDATE_INTERVAL,
     CONF_PERIODS,
@@ -33,7 +35,14 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 # Keys that a device may override from `defaults`.
-_INHERITABLE = (CONF_ENERGY_PRICE, CONF_SELF_SUFFICIENCY_SOURCE, CONF_LIVE_UPDATE_INTERVAL, CONF_PERIODS)
+_INHERITABLE = (
+    CONF_ENERGY_PRICE,
+    CONF_SELF_SUFFICIENCY_SOURCE,
+    CONF_SOLAR_SHARE_SOURCE,
+    CONF_BATTERY_SHARE_SOURCE,
+    CONF_LIVE_UPDATE_INTERVAL,
+    CONF_PERIODS,
+)
 
 
 def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
@@ -43,6 +52,16 @@ def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dic
     for key in _INHERITABLE:
         if key not in resolved and key in defaults:
             resolved[key] = defaults[key]
+
+    # solar/battery share are one option in two spellings (schema enforces the
+    # exclusivity per level); if the device sets one explicitly, drop the other
+    # spelling inherited from the defaults so exactly one survives the merge.
+    for own, other in (
+        (CONF_SOLAR_SHARE_SOURCE, CONF_BATTERY_SHARE_SOURCE),
+        (CONF_BATTERY_SHARE_SOURCE, CONF_SOLAR_SHARE_SOURCE),
+    ):
+        if own in device and other in resolved and other not in device:
+            resolved.pop(other)
 
     suffix = defaults.get(CONF_NAME_SUFFIX, "")
     resolved["prefix"] = f"{device[CONF_NAME]}{suffix}"

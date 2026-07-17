@@ -41,6 +41,7 @@ The running and standby groups source the **decoupled total lifetime**, so they 
 | `sensor.<base>_from_self_lifetime` 💤 ↺ | kWh | `self_sufficiency_source` | Share covered by self-production: each group delta split by the current self-sufficiency % |
 | `sensor.<base>_from_grid_lifetime` 💤 ↺ | kWh | ” | Grid share — the exact remainder of the same atomic split, so `from_self + from_grid` = the group total, always |
 | `sensor.<base>_from_self_<period>` / `_from_grid_<period>` 🚫 | kWh | ” | Lean period meters over the split |
+| `sensor.<base>_from_solar_lifetime` / `_from_battery_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | `self_sufficiency_source` + a share source | Second-level split of the self share: direct solar vs battery discharge, driven by `solar_share_source` (or `battery_share_source`, the complement). `from_solar + from_battery = from_self`, always |
 | `sensor.<base>_cost_lifetime` 💤 ↺ | € | `energy_price` | Cost integrator: each delta priced at the tariff valid *at that moment* |
 | `sensor.<base>_cost_<period>` 🚫 | € | ” | Lean period meters over the cost |
 | `sensor.<base>_from_grid_savings_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | both | What self-production saved (the `from_self` share priced) |
@@ -80,7 +81,8 @@ Each available metric gets the same four views. Which metrics exist depends on t
 | `energy` | — | kWh |
 | `cost` | `energy_price` | € |
 | `energy_from_self`, `energy_from_grid` | `self_sufficiency_source` | kWh |
-| `energy_from_grid_savings`, `energy_from_grid_cost` | both | € |
+| `energy_from_solar`, `energy_from_battery` | `self_sufficiency_source` + a share source | kWh |
+| `energy_from_grid_savings`, `energy_from_grid_cost` | `self_sufficiency_source` + `energy_price` | € |
 
 The four views, for each metric `<m>`:
 

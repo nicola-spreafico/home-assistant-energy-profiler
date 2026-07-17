@@ -9,6 +9,11 @@ CONF_DEVICES = "devices"
 # Shared defaults (were the generator's "globals")
 CONF_ENERGY_PRICE = "energy_price"                     # energyPriceEntityId
 CONF_SELF_SUFFICIENCY_SOURCE = "self_sufficiency_source"  # selfSufficiencyPercentageEntityId
+# Optional second-level split of the self share into solar vs battery. The user
+# provides ONE of the two (the other is the complement): a % *of the
+# self-consumed energy* coming from solar, or from the battery.
+CONF_SOLAR_SHARE_SOURCE = "solar_share_source"
+CONF_BATTERY_SHARE_SOURCE = "battery_share_source"
 CONF_NAME_SUFFIX = "name_suffix"                       # entitiesPrefixEnd (default "_em")
 CONF_LIVE_UPDATE_INTERVAL = "live_update_interval"
 CONF_PERIODS = "periods"                               # which lean meter periods to create

@@ -6,9 +6,10 @@ Everything lives under a single `energy_insights_monitor:` block: one global `de
 
 | You provide… | You get |
 | --- | --- |
-| `power` + `energy` (required) | **power** + **energy** families — peak power, all-time total, per-period energy meters |
-| `energy_price` | **cost** family — € accumulators, per-period cost meters, instant cost rates |
-| `self_sufficiency_source` | **self-sufficiency** family — solar/grid split (power, energy, %), and with a price also savings/grid-cost |
+| `power` + `energy` (required) | peak power + the **total energy group** — all-time total, per-period energy meters |
+| `energy_price` | the **cost sub-block** in every energy group (€ accumulators, per-period cost meters) + instant cost rates on the total |
+| `self_sufficiency_source` | the **self/grid split sub-block** in every energy group (power, energy, %), and with a price also savings/grid-cost |
+| `solar_share_source` *or* `battery_share_source` | the **solar/battery split** of the self share (`from_solar` + `from_battery` = `from_self`) in every group and in the cycle metrics |
 | `running:` block | the running **signal** (`binary_sensor.<prefix>_running`) plus the **running energy group** — the same stack as the total, gated on it |
 | `cycle_tracking:` (needs `running:`) | **cycles** family — per-run analytics: completed/live/mean values, counters, events |
 | `standby:` (bool or trigger block) | the standby **signal** (`binary_sensor.<prefix>_standby`) plus the **standby energy group** — same stack, gated on it |
@@ -30,7 +31,9 @@ Global values inherited by every device that does not override them.
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `energy_price` | entity id | — | Sensor with the current energy purchase price (€/kWh). Enables the **cost** family for all devices |
-| `self_sufficiency_source` | entity id | — | Sensor with the instantaneous home self-sufficiency percentage (0–100, e.g. solar production vs consumption). Enables the **self-sufficiency** family |
+| `self_sufficiency_source` | entity id | — | Sensor with the instantaneous home self-sufficiency percentage (0–100): the share of consumption covered by *any* local source. Enables the self/grid split in every energy group |
+| `solar_share_source` | entity id | — | Optional second-level split: the % **of the self-consumed energy** coming directly from solar. Adds `from_solar`/`from_battery` to every group and to the cycle metrics. Mutually exclusive with `battery_share_source` (the other side is the exact complement). See the README for an example of computing this sensor |
+| `battery_share_source` | entity id | — | Same split, expressed as the battery share of self (solar is the complement). Mutually exclusive with `solar_share_source` |
 | `name_suffix` | string | `_em` | Appended to each device `name` to form the entity prefix (`<name><name_suffix>`); useful to namespace the whole fleet |
 | `live_update_interval` | duration | `00:05:00` | Throttle for the Lean meters' live LTS upserts (period boundaries are always written exactly). Passed through to every meter |
 | `periods` | list | `[daily, monthly, yearly]` | Which per-period meters every device gets: `hourly`, `daily`, `weekly`, `monthly`, `bimonthly`, `quarterly`, `yearly` |
@@ -43,7 +46,8 @@ Global values inherited by every device that does not override them.
 | `power` | entity id | ✔ | The device's instantaneous power sensor (W) |
 | `energy` | entity id | ✔ | The device's cumulative energy sensor (kWh). Resets and sensor swaps are tolerated: the integration accumulates only positive deltas into its own lifetime total |
 | `energy_price` | entity id or `null` | — | Per-device override of the default. Set `null` to opt this device **out** of the cost family even when a default is configured |
-| `self_sufficiency_source` | entity id or `null` | — | Per-device override; `null` opts out of the self-sufficiency family |
+| `self_sufficiency_source` | entity id or `null` | — | Per-device override; `null` opts out of the self/grid split |
+| `solar_share_source` / `battery_share_source` | entity id or `null` | — | Per-device override of the solar/battery split; `null` opts out. Setting one spelling on the device replaces the other spelling inherited from the defaults |
 | `live_update_interval` | duration | — | Per-device override of the default |
 | `periods` | list | — | Per-device override of the default period set |
 
