@@ -473,9 +473,10 @@ class CycleLiveDurationSensor(SensorEntity):
 
 
 class StandbyDurationSensor(SensorEntity):
-    """Time the device has been idle since it last stopped (s); 0 while running.
+    """Time spent in the current standby stretch (s); 0 while not in standby.
 
-    Reincarnates ``004_standby/standby_001_[live]``.
+    Reincarnates ``004_standby/standby_001_[live]``, gated on the ``_standby``
+    gatekeeper (whatever flavor the device configured).
     """
 
     _attr_should_poll = False
@@ -484,33 +485,33 @@ class StandbyDurationSensor(SensorEntity):
     _attr_native_unit_of_measurement = "s"
     _attr_icon = "mdi:power-sleep"
 
-    def __init__(self, hass: HomeAssistant, *, slug: str, running_entity: str, name: str | None = None) -> None:
+    def __init__(self, hass: HomeAssistant, *, slug: str, standby_entity: str, name: str | None = None) -> None:
         self.hass = hass
         self.entity_id = f"sensor.{slug}"
         self._attr_unique_id = slug
         self._attr_name = name or slug
-        self._running = running_entity
-        self._off_since = None
+        self._standby = standby_entity
+        self._standby_since = None
         self._attr_native_value = 0.0
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        if not self.hass.states.is_state(self._running, STATE_ON):
-            self._off_since = dt_util.utcnow()
+        if self.hass.states.is_state(self._standby, STATE_ON):
+            self._standby_since = dt_util.utcnow()
         self._recalculate()
         self.async_on_remove(
-            async_track_state_change_event(self.hass, [self._running], self._on_running)
+            async_track_state_change_event(self.hass, [self._standby], self._on_standby)
         )
         self.async_on_remove(
             async_track_time_interval(self.hass, self._tick, timedelta(seconds=10))
         )
 
     @callback
-    def _on_running(self, event: Event) -> None:
+    def _on_standby(self, event: Event) -> None:
         new_state = event.data.get("new_state")
         if new_state is None:
             return
-        self._off_since = None if new_state.state == STATE_ON else dt_util.utcnow()
+        self._standby_since = dt_util.utcnow() if new_state.state == STATE_ON else None
         self._recalculate()
         self.async_write_ha_state()
 
@@ -521,10 +522,10 @@ class StandbyDurationSensor(SensorEntity):
 
     @callback
     def _recalculate(self) -> None:
-        if self._off_since is None or self.hass.states.is_state(self._running, STATE_ON):
+        if self._standby_since is None or not self.hass.states.is_state(self._standby, STATE_ON):
             self._attr_native_value = 0.0
             return
-        self._attr_native_value = round(max(0.0, (dt_util.utcnow() - self._off_since).total_seconds()), 1)
+        self._attr_native_value = round(max(0.0, (dt_util.utcnow() - self._standby_since).total_seconds()), 1)
 
 
 def _validate(duration_s: float, energy: float | None, limits: dict) -> tuple[bool, str]:

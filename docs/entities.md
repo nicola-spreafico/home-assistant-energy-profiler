@@ -124,12 +124,13 @@ status: valid                # or too_short / too_long / too_little_energy / too
 cycle_count: 42              # valid cycles so far
 ```
 
-## Standby — requires `standby: true` (and `run:`)
+## Standby — requires `standby:` (and `run:` only for the default flavor)
 
 | Entity | Unit | Description |
 | --- | --- | --- |
-| `sensor.<p>_standby_energy_lifetime` 💤 ↺ | kWh | Energy accumulated **only while `…_running` is off** — the all-time cost of leaving the device plugged in |
+| `binary_sensor.<p>_standby` 📈 | — | The gatekeeper: `on` while the device is in standby, per the configured flavor (`true` = running off; power range; template — see [configuration](configuration.md#standby-standby)). In the default flavor it mirrors `…_running` inverted, so recording both is redundant |
+| `sensor.<p>_standby_energy_lifetime` 💤 ↺ | kWh | Energy accumulated **only while `…_standby` is on** — the all-time cost of leaving the device plugged in |
 | `sensor.<p>_standby_energy_<cycle>` 🚫 | kWh | Lean cycle meters over it |
-| `sensor.<p>_standby_duration` 💤 | s | How long the device has been idle since it last stopped (0 while running) |
+| `sensor.<p>_standby_duration` 💤 | s | How long the current standby stretch has lasted (0 while not in standby) |
 | `sensor.<p>_standby_energy_cost_lifetime` 💤 ↺ | € | Standby energy priced at the current tariff (with `energy_price`) |
 | `sensor.<p>_standby_energy_cost_<cycle>` 🚫 | € | Lean cycle meters over it |

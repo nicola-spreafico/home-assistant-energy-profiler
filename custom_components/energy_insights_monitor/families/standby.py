@@ -1,22 +1,39 @@
 """Family: standby.
 
 Replaces the generator's ``004_standby`` fragments: the energy (and its cost)
-drawn while the device is *not* running — idle/standby consumption.
+drawn while the device is in *standby* — idle/vampire consumption.
 
-The original measured this as ``hw_energy - cycle_stop_snapshot`` while idle. Here
-a :class:`StandbyEnergyAccumulator` accumulates the energy deltas only while
-``binary_sensor.<prefix>_running`` is off, which yields the same per-cycle standby
-energy for the downstream Lean meters without depending on the cycle stop snapshot.
+Everything is gated on a first-class ``binary_sensor.<prefix>_standby``
+gatekeeper, whose flavor is chosen by the ``standby`` option:
 
-Requires the running detection (the cycles ``run`` block); if a device enables
-standby without it, the family is skipped with a warning.
+- ``standby: true`` — the default: standby is simply "``_running`` is off"
+  (requires the cycles ``run`` block; skipped with a warning otherwise);
+- ``standby: {trigger: power, on_below: ...}`` — standby when the power draw
+  stays inside the vampire range (inverted thresholds vs ``run``);
+- ``standby: {trigger: template, ...}`` — a custom condition.
+
+While the gatekeeper is on, a :class:`StandbyEnergyAccumulator` accumulates the
+energy deltas (yielding the per-cycle standby energy for the downstream Lean
+meters), and ``_standby_duration`` counts the time spent in standby.
 """
 
 import logging
 
 from homeassistant.components.sensor import SensorDeviceClass
 
-from ..const import CONF_ENERGY_PRICE, CONF_RUN
+from ..const import (
+    CONF_AVAILABLE,
+    CONF_ENERGY_PRICE,
+    CONF_OFF_ABOVE,
+    CONF_OFF_DELAY,
+    CONF_ON_BELOW,
+    CONF_ON_DELAY,
+    CONF_POWER,
+    CONF_RUN,
+    CONF_STANDBY,
+    CONF_STATE,
+    CONF_TRIGGER,
+)
 from ..integrator import EnergyCostIntegratorSensor
 from ..lean import build_cycle_meters
 from ..lifetime import StandbyEnergyAccumulator
@@ -26,17 +43,73 @@ from .energy import lifetime_entity_id
 _LOGGER = logging.getLogger(__name__)
 
 
+def standby_entity_id(prefix: str) -> str:
+    """The ``_standby`` binary sensor id — the gatekeeper for the standby family."""
+    return f"binary_sensor.{prefix}_standby"
+
+
+def _default_mode_misconfigured(device) -> bool:
+    """True when `standby: true` was requested without the `run` block it needs."""
+    return device.get(CONF_STANDBY) is True and not device.get(CONF_RUN)
+
+
+def build_binary_sensors(hass, device):
+    """Return the ``_standby`` gatekeeper in the configured flavor."""
+    standby = device.get(CONF_STANDBY)
+    if not standby:
+        return []
+
+    prefix = device["prefix"]
+    if _default_mode_misconfigured(device):
+        _LOGGER.warning(
+            "Device %s enables standby (default flavor) but has no 'run' block; the "
+            "default gates on running=off, so it needs running detection — skipping "
+            "standby family. Use a custom standby trigger to go without 'run'.",
+            prefix,
+        )
+        return []
+
+    from ..binary_sensor import (
+        PowerStandbyBinarySensor,
+        StandbyFromRunningBinarySensor,
+        TemplateStandbyBinarySensor,
+    )
+
+    slug = f"{prefix}_standby"
+    if standby is True:
+        return [
+            StandbyFromRunningBinarySensor(
+                hass, slug=slug, running_entity=running_entity_id(prefix)
+            )
+        ]
+    if standby[CONF_TRIGGER] == "power":
+        return [
+            PowerStandbyBinarySensor(
+                hass,
+                slug=slug,
+                power_source=device[CONF_POWER],
+                on_below=standby[CONF_ON_BELOW],
+                off_above=standby.get(CONF_OFF_ABOVE),
+                on_delay=standby[CONF_ON_DELAY],
+                off_delay=standby[CONF_OFF_DELAY],
+            )
+        ]
+    return [
+        TemplateStandbyBinarySensor(
+            hass,
+            slug=slug,
+            state_template=standby[CONF_STATE],
+            availability_template=standby.get(CONF_AVAILABLE),
+        )
+    ]
+
+
 def build(hass, device):
     """Return the standby energy accumulator, its Lean meters, and (if priced) cost."""
     prefix = device["prefix"]
 
-    if not device.get(CONF_RUN):
-        _LOGGER.warning(
-            "Device %s enables standby but has no 'run' block; standby needs running "
-            "detection to know when the device is idle — skipping standby family",
-            prefix,
-        )
-        return []
+    if _default_mode_misconfigured(device):
+        return []  # already warned in build_binary_sensors
 
     price = device.get(CONF_ENERGY_PRICE)
     standby_lifetime = f"{prefix}_standby_energy_lifetime"
@@ -47,12 +120,12 @@ def build(hass, device):
         StandbyEnergyAccumulator(
             hass,
             slug=standby_lifetime,
-            # Gate the decoupled lifetime's deltas on the running state.
+            # Gate the decoupled lifetime's deltas on the standby gatekeeper.
             energy_source=lifetime_entity_id(prefix),
-            running_entity=running_entity_id(prefix),
+            standby_entity=standby_entity_id(prefix),
         ),
         StandbyDurationSensor(
-            hass, slug=f"{prefix}_standby_duration", running_entity=running_entity_id(prefix),
+            hass, slug=f"{prefix}_standby_duration", standby_entity=standby_entity_id(prefix),
         ),
     ]
     entities += build_cycle_meters(

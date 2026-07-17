@@ -33,9 +33,14 @@ def build_entities(hass, device):
 def build_binary_sensors(hass, device):
     """Return all binary_sensor-platform entities for a device.
 
-    Only the cycles family contributes binary sensors so far (the ``_running``
-    gatekeeper), and only when the device declares a ``run`` block.
+    Two families contribute gatekeepers: cycles (``_running``, when the device
+    declares a ``run`` block) and standby (``_standby``, in the flavor chosen by
+    the ``standby`` option).
     """
-    if FAMILY_CYCLES not in device.get("families", []):
-        return []
-    return cycles.build_binary_sensors(hass, device)
+    families_enabled = device.get("families", [])
+    entities = []
+    if FAMILY_CYCLES in families_enabled:
+        entities.extend(cycles.build_binary_sensors(hass, device))
+    if FAMILY_STANDBY in families_enabled:
+        entities.extend(standby.build_binary_sensors(hass, device))
+    return entities

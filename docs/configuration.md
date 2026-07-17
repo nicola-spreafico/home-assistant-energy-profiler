@@ -10,7 +10,7 @@ Everything lives under a single `energy_insights_monitor:` block: one global `de
 | `energy_price` | **cost** — € accumulators, per-cycle cost meters, instant cost rates |
 | `self_sufficiency_source` | **self-sufficiency** — solar/grid split (power, energy, %), and with a price also savings/grid-cost |
 | `run:` block | **cycles** — run detection, per-cycle analytics, completed/live/mean values, events |
-| `standby: true` (needs `run:`) | **standby** — idle energy and its cost |
+| `standby:` (bool or trigger block) | **standby** — idle energy and its cost; `true` gates on running-off, a trigger block defines a custom condition |
 
 The full entity output of each family is cataloged in [Entities](entities.md).
 
@@ -101,11 +101,35 @@ The verdict (or `valid`) is exposed by `sensor.<prefix>_cycle_validation_status`
 
 ## Standby (`standby:`)
 
+Enables the **standby** family: energy accumulated while the device is in standby (plus its cost, when priced), gated on a dedicated `binary_sensor.<prefix>_standby`. Three flavors:
+
+**Default** — standby is simply "not running". Requires the `run:` block (without running detection there is no notion of "idle"; the family is skipped with a warning). The standby sensor mirrors `…_running` inverted, and follows its availability:
+
 ```yaml
 standby: true
 ```
 
-Enables the **standby** family: energy accumulated only while `…_running` is `off` (plus its cost, when priced). Requires the `run:` block — without running detection there is no notion of "idle", and the family is skipped with a warning in the log.
+**Power threshold** — standby while the draw sits in the vampire range. Does **not** require `run:`. Thresholds are inverted with respect to `run:` (standby is entered going *down*):
+
+```yaml
+standby:
+  trigger: power
+  on_below: 8            # W: standby when power drops below this…
+  on_delay: "00:01:00"   # …for at least this long (default 0)
+  off_above: 12          # W: standby ends above this (default: same as on_below)
+  off_delay: "00:00:10"  # …for at least this long (default 0)
+```
+
+**Template** — any custom condition (a `media_player` state, a helper, …). Does **not** require `run:`:
+
+```yaml
+standby:
+  trigger: template
+  available: "{{ has_value('media_player.console') }}"
+  state: "{{ is_state('media_player.console', 'standby') }}"
+```
+
+Whatever the flavor, energy is attributed to standby only while the gatekeeper is `on` — when it is `off` **or unavailable**, the baseline advances without accumulating, so uncertain periods are never counted as standby.
 
 ## Full example
 

@@ -31,6 +31,8 @@ from .const import (
     CONF_ON_DELAY,
     CONF_OFF_BELOW,
     CONF_OFF_DELAY,
+    CONF_ON_BELOW,
+    CONF_OFF_ABOVE,
     CONF_AVAILABLE,
     CONF_STATE,
     DEFAULT_NAME_SUFFIX,
@@ -46,6 +48,32 @@ RUN_SCHEMA = vol.Any(
             vol.Required(CONF_TRIGGER): "power",
             vol.Optional(CONF_ON_ABOVE, default=0): vol.Coerce(float),
             vol.Optional(CONF_OFF_BELOW, default=1): vol.Coerce(float),
+            vol.Optional(CONF_ON_DELAY, default="00:00:00"): cv.time_period,
+            vol.Optional(CONF_OFF_DELAY, default="00:00:00"): cv.time_period,
+        }
+    ),
+    vol.Schema(
+        {
+            vol.Required(CONF_TRIGGER): "template",
+            vol.Required(CONF_AVAILABLE): cv.template,
+            vol.Required(CONF_STATE): cv.template,
+        }
+    ),
+)
+
+# standby: — boolean or a custom condition. `true` keeps the default gating
+# (standby == running off, needs the `run` block); a trigger block defines an
+# independent standby condition, mirroring the `run` flavors. The power flavor
+# has inverted threshold semantics: standby starts when power *drops below*
+# `on_below` (for `on_delay`) and ends when it *rises above* `off_above`
+# (default: same as on_below) for `off_delay`.
+STANDBY_SCHEMA = vol.Any(
+    cv.boolean,
+    vol.Schema(
+        {
+            vol.Required(CONF_TRIGGER): "power",
+            vol.Required(CONF_ON_BELOW): vol.Coerce(float),
+            vol.Optional(CONF_OFF_ABOVE): vol.Coerce(float),
             vol.Optional(CONF_ON_DELAY, default="00:00:00"): cv.time_period,
             vol.Optional(CONF_OFF_DELAY, default="00:00:00"): cv.time_period,
         }
@@ -93,7 +121,7 @@ DEVICE_SCHEMA = vol.Schema(
         # Cycle tracking (optional): presence of `run` turns it on
         vol.Optional(CONF_RUN): RUN_SCHEMA,
         vol.Optional(CONF_LIMITS): LIMITS_SCHEMA,
-        vol.Optional(CONF_STANDBY, default=False): cv.boolean,
+        vol.Optional(CONF_STANDBY, default=False): STANDBY_SCHEMA,
         vol.Optional(CONF_NOTIFY_ON_COMPLETE, default=False): cv.boolean,
     }
 )

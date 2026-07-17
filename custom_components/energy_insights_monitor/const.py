@@ -23,7 +23,7 @@ CONF_LIMITS = "limits"                                 # cycles.min/max duration
 CONF_STANDBY = "standby"                               # enable standby family
 CONF_NOTIFY_ON_COMPLETE = "notify_on_complete"         # sendCycleCompletedNotification
 
-# run.* keys
+# run.* / standby.* trigger keys
 CONF_TRIGGER = "trigger"                               # "power" | "template"
 CONF_ON_ABOVE = "on_above"
 CONF_ON_DELAY = "on_delay"
@@ -31,6 +31,9 @@ CONF_OFF_BELOW = "off_below"
 CONF_OFF_DELAY = "off_delay"
 CONF_AVAILABLE = "available"                           # template trigger availability
 CONF_STATE = "state"                                   # template trigger state
+# standby power-trigger thresholds (inverted semantics vs run)
+CONF_ON_BELOW = "on_below"                             # standby when power drops below
+CONF_OFF_ABOVE = "off_above"                           # standby ends when power rises above
 
 # Defaults
 DEFAULT_NAME_SUFFIX = "_em"
