@@ -18,7 +18,7 @@
 # are created.
 # ─────────────────────────────────────────────────────────────────────────────
 
-energy_insights_monitor:
+energy_profiler:
   defaults:
     energy_price: sensor.energy_price_purchase   # €/kWh
     name_suffix: _em                             # appended to every entity id

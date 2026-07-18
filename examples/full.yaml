@@ -5,7 +5,7 @@
 # device inherits the defaults and overrides only what it needs.
 # ─────────────────────────────────────────────────────────────────────────────
 
-energy_insights_monitor:
+energy_profiler:
   defaults:
     energy_price: sensor.energy_price_purchase
     self_sufficiency_source: sensor.home_self_sufficiency_score

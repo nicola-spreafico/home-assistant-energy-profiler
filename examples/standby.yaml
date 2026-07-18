@@ -15,7 +15,7 @@
 #   sensor.<prefix>_standby_energy_cost_lifetime / _{...}             (€, if priced)
 # ─────────────────────────────────────────────────────────────────────────────
 
-energy_insights_monitor:
+energy_profiler:
   defaults:
     energy_price: sensor.energy_price_purchase
     name_suffix: _em

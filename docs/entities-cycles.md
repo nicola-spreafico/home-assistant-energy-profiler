@@ -58,8 +58,8 @@ Which metrics exist depends on the configured sources; explicit ids (note the tw
 
 When a cycle closes, one of two events fires on the Home Assistant bus — the intended hook for notifications and automations (this replaces the legacy generator's built-in notify):
 
-- `energy_insights_monitor_cycle_completed` — the cycle passed the configured limits
-- `energy_insights_monitor_cycle_discarded` — it failed them (counters and means were not touched)
+- `energy_profiler_cycle_completed` — the cycle passed the configured limits
+- `energy_profiler_cycle_discarded` — it failed them (counters and means were not touched)
 
 Payload:
 

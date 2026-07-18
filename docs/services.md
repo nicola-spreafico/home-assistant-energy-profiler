@@ -2,14 +2,14 @@
 
 [← Back to README](../README.md)
 
-The integration registers **one** service of its own, `energy_insights_monitor.reset`, scoped to the entities it owns directly. Everything meter-shaped is a native [Lean Utility Meter](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter) entity and is maintained with Lean's own services — see [the second section](#maintaining-the-period-meters-lean-native-services).
+The integration registers **one** service of its own, `energy_profiler.reset`, scoped to the entities it owns directly. Everything meter-shaped is a native [Lean Utility Meter](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter) entity and is maintained with Lean's own services — see [the second section](#maintaining-the-period-meters-lean-native-services).
 
-## `energy_insights_monitor.reset`
+## `energy_profiler.reset`
 
 Zeroes a resettable entity. The idiomatic replacement for the legacy generator's `reset_*` scripts.
 
 ```yaml
-action: energy_insights_monitor.reset
+action: energy_profiler.reset
 target:
   entity_id: sensor.washing_machine_em_power_max
 ```

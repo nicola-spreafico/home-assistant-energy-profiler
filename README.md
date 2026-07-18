@@ -1,11 +1,11 @@
-# Energy Insights Monitor
+# Energy Profiler
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![Validate](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/actions/workflows/validate.yml/badge.svg)](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/actions/workflows/validate.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/nicola-spreafico/home-assistant-energy-insights-monitor)](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/releases)
-[![License: GPL-3.0](https://img.shields.io/github/license/nicola-spreafico/home-assistant-energy-insights-monitor)](LICENSE)
-[![GitHub Last Commit](https://img.shields.io/github/last-commit/nicola-spreafico/home-assistant-energy-insights-monitor)](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/commits)
-[![GitHub Issues](https://img.shields.io/github/issues/nicola-spreafico/home-assistant-energy-insights-monitor)](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/issues)
+[![Validate](https://github.com/nicola-spreafico/home-assistant-energy-profiler/actions/workflows/validate.yml/badge.svg)](https://github.com/nicola-spreafico/home-assistant-energy-profiler/actions/workflows/validate.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/nicola-spreafico/home-assistant-energy-profiler)](https://github.com/nicola-spreafico/home-assistant-energy-profiler/releases)
+[![License: GPL-3.0](https://img.shields.io/github/license/nicola-spreafico/home-assistant-energy-profiler)](LICENSE)
+[![GitHub Last Commit](https://img.shields.io/github/last-commit/nicola-spreafico/home-assistant-energy-profiler)](https://github.com/nicola-spreafico/home-assistant-energy-profiler/commits)
+[![GitHub Issues](https://img.shields.io/github/issues/nicola-spreafico/home-assistant-energy-profiler)](https://github.com/nicola-spreafico/home-assistant-energy-profiler/issues)
 [![Buy Me a Pizza](https://img.shields.io/badge/Buy%20me%20a%20pizza-%F0%9F%8D%95-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mf3ebnouct)
 
 **Per-device energy intelligence for Home Assistant: energy, cost, solar self-sufficiency, appliance run cycles and standby waste — from just two sensors per device, configured entirely in YAML.**
@@ -33,7 +33,7 @@ integration will refuse to set up.
 Declare `defaults:` **exactly once**: it is the system-wide baseline every device inherits. Any key can then be overridden by a single device (or opted out with `null`). Thanks to Home Assistant's package merge, this block can live in its own file while the devices are spread across other packages.
 
 ```yaml
-energy_insights_monitor:
+energy_profiler:
   defaults:
     energy_price: sensor.energy_price_purchase             # optional: enables the cost sub-block
     self_sufficiency_source: sensor.home_self_sufficiency  # optional: enables the self/grid split
@@ -94,7 +94,7 @@ Each block below is self-contained (a `devices:` list merges across package file
 **1. Minimal** — energy + cost, nothing else (cost because a default price exists):
 
 ```yaml
-energy_insights_monitor:
+energy_profiler:
   devices:
     - name: dishwasher
       power: sensor.dishwasher_power
@@ -104,7 +104,7 @@ energy_insights_monitor:
 **2. Per-device overrides** — opt out of a default with `null`, narrow the periods:
 
 ```yaml
-energy_insights_monitor:
+energy_profiler:
   devices:
     - name: home_office
       power: sensor.home_office_power
@@ -116,7 +116,7 @@ energy_insights_monitor:
 **3. Power-based running + full cycle analytics** — thresholds with debounce, plausibility limits:
 
 ```yaml
-energy_insights_monitor:
+energy_profiler:
   devices:
     - name: washing_machine
       power: sensor.washing_machine_power
@@ -138,7 +138,7 @@ energy_insights_monitor:
 **4. Template-based running + default standby** — detection from another entity's state, analytics without limits, standby by difference:
 
 ```yaml
-energy_insights_monitor:
+energy_profiler:
   devices:
     - name: bedroom_ac
       power: sensor.bedroom_ac_power
@@ -154,7 +154,7 @@ energy_insights_monitor:
 **5. Running signal only + standby** — no analytics: the signal exists just to give standby its complement:
 
 ```yaml
-energy_insights_monitor:
+energy_profiler:
   devices:
     - name: tv
       power: sensor.tv_power
@@ -169,7 +169,7 @@ energy_insights_monitor:
 **6. Standalone power-based standby** — the vampire range, no running detection at all. Thresholds are inverted: standby starts going *down* through `on_below`:
 
 ```yaml
-energy_insights_monitor:
+energy_profiler:
   devices:
     - name: stereo
       power: sensor.stereo_power
@@ -185,7 +185,7 @@ energy_insights_monitor:
 **7. Standalone template-based standby** — any custom condition:
 
 ```yaml
-energy_insights_monitor:
+energy_profiler:
   devices:
     - name: console
       power: sensor.console_power
@@ -223,12 +223,12 @@ Focused configurations in the `examples/` directory:
 
 ## Services
 
-- `energy_insights_monitor.reset` — zero a resettable entity (lifetime accumulators, cycle counters, peak power); no-op on entities with nothing to reset
+- `energy_profiler.reset` — zero a resettable entity (lifetime accumulators, cycle counters, peak power); no-op on entities with nothing to reset
 - The per-period meters are **native Lean entities**, so Lean's own services (`lean_utility_meter.thin_history`, `import_history`, `clear_history`, `calibrate`) target them directly
 
 Details and the full entity lists in [Services & Actions](docs/services.md).
 
-The cycles family also fires `energy_insights_monitor_cycle_completed` / `_cycle_discarded` events for your own automations — payload documented in [Cycle tracking entities](docs/entities-cycles.md#events).
+The cycles family also fires `energy_profiler_cycle_completed` / `_cycle_discarded` events for your own automations — payload documented in [Cycle tracking entities](docs/entities-cycles.md#events).
 
 ## Status
 
@@ -236,4 +236,4 @@ The cycles family also fires `energy_insights_monitor_cycle_completed` / `_cycle
 
 Successor to the `scripts/energy_monitor` code generator: instead of rendering
 ~66 static YAML packages, it creates the same entities dynamically from an
-`energy_insights_monitor:` config block, preserving the historical entity ids.
+`energy_profiler:` config block, preserving the historical entity ids.

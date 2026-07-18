@@ -40,9 +40,9 @@ _INVALID = (None, STATE_UNAVAILABLE, STATE_UNKNOWN)
 
 # Fired on each completed cycle so users can automate notifications themselves
 # (the HA-idiomatic alternative to the old package's built-in notify action).
-EVENT_CYCLE_COMPLETED = "energy_insights_monitor_cycle_completed"
+EVENT_CYCLE_COMPLETED = "energy_profiler_cycle_completed"
 # Fired instead when a closed cycle fails the configured min/max limits.
-EVENT_CYCLE_DISCARDED = "energy_insights_monitor_cycle_discarded"
+EVENT_CYCLE_DISCARDED = "energy_profiler_cycle_discarded"
 
 
 def _to_float(value) -> float | None:

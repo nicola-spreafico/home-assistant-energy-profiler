@@ -1,6 +1,6 @@
-"""Constants for the Energy Insights Monitor integration."""
+"""Constants for the Energy Profiler integration."""
 
-DOMAIN = "energy_insights_monitor"
+DOMAIN = "energy_profiler"
 
 # Top-level config keys
 CONF_DEFAULTS = "defaults"

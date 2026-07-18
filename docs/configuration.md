@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md)
 
-Everything lives under a single `energy_insights_monitor:` block: one global `defaults` section plus a `devices` list. What each device enables is decided by **which options it declares** — there are no `enable_x: true` switches:
+Everything lives under a single `energy_profiler:` block: one global `defaults` section plus a `devices` list. What each device enables is decided by **which options it declares** — there are no `enable_x: true` switches:
 
 | You provide… | You get |
 | --- | --- |

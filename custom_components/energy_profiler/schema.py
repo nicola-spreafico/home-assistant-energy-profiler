@@ -1,4 +1,4 @@
-"""Voluptuous config schema for the Energy Insights Monitor integration.
+"""Voluptuous config schema for the Energy Profiler integration.
 
 Mirrors the shape of the old generator's ``config.jsonc`` (globals + devices),
 but validated at load time so typos surface as clear errors instead of silently

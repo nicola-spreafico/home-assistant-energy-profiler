@@ -9,11 +9,11 @@
 #                   used to discard spurious runs. `cycle_tracking: true` enables
 #                   it with no limits.
 #
-# Each valid completed run fires energy_insights_monitor_cycle_completed (or
+# Each valid completed run fires energy_profiler_cycle_completed (or
 # _cycle_discarded when limits reject it) — build notifications on those events.
 # ─────────────────────────────────────────────────────────────────────────────
 
-energy_insights_monitor:
+energy_profiler:
   defaults:
     energy_price: sensor.energy_price_purchase
     name_suffix: _em

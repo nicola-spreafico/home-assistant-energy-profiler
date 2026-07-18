@@ -38,7 +38,7 @@ async def async_setup_platform(hass, config, async_add_entities: AddEntitiesCall
 
     if not lean_available(hass):
         _LOGGER.error(
-            "Lean Utility Meter is not set up; no Energy Insights Monitor "
+            "Lean Utility Meter is not set up; no Energy Profiler "
             "entities will be created. Is the 'lean_utility_meter' integration installed?"
         )
         return
@@ -51,7 +51,7 @@ async def async_setup_platform(hass, config, async_add_entities: AddEntitiesCall
     entities = [item for item in items if not isinstance(item, dict)]
 
     _LOGGER.debug(
-        "Energy Insights Monitor: adding %d entities, dispatching %d Lean meters",
+        "Energy Profiler: adding %d entities, dispatching %d Lean meters",
         len(entities), len(meter_specs),
     )
     # No update_before_add: these entities are push-based (should_poll=False) and

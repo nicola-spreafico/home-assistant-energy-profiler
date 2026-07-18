@@ -17,7 +17,7 @@
 #   sensor.heat_pump_em_energy_self_sufficiency_{daily,monthly,yearly}  (%, live)
 # ─────────────────────────────────────────────────────────────────────────────
 
-energy_insights_monitor:
+energy_profiler:
   defaults:
     energy_price: sensor.energy_price_purchase
     # Instantaneous house self-sufficiency %, shared by all devices:
