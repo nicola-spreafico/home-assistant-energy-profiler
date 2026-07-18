@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="custom_components/energy_profiler/brand/icon.png" alt="Energy Profiler">
-</p>
-
 # Energy Profiler
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
@@ -11,6 +7,10 @@
 [![GitHub Last Commit](https://img.shields.io/github/last-commit/nicola-spreafico/home-assistant-energy-profiler)](https://github.com/nicola-spreafico/home-assistant-energy-profiler/commits)
 [![GitHub Issues](https://img.shields.io/github/issues/nicola-spreafico/home-assistant-energy-profiler)](https://github.com/nicola-spreafico/home-assistant-energy-profiler/issues)
 [![Buy Me a Pizza](https://img.shields.io/badge/Buy%20me%20a%20pizza-%F0%9F%8D%95-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mf3ebnouct)
+
+<p align="center">
+  <img src="custom_components/energy_profiler/brand/icon.png" alt="Energy Profiler">
+</p>
 
 **Per-device energy intelligence for Home Assistant: energy, cost, solar self-sufficiency, appliance run cycles and standby waste — from just two sensors per device, configured entirely in YAML.**
 
