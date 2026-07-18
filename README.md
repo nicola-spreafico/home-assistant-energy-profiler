@@ -1,5 +1,13 @@
 # Energy Insights Monitor
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![Validate](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/actions/workflows/validate.yml/badge.svg)](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/actions/workflows/validate.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/nicola-spreafico/home-assistant-energy-insights-monitor)](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/releases)
+[![License: GPL-3.0](https://img.shields.io/github/license/nicola-spreafico/home-assistant-energy-insights-monitor)](LICENSE)
+[![GitHub Last Commit](https://img.shields.io/github/last-commit/nicola-spreafico/home-assistant-energy-insights-monitor)](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/commits)
+[![GitHub Issues](https://img.shields.io/github/issues/nicola-spreafico/home-assistant-energy-insights-monitor)](https://github.com/nicola-spreafico/home-assistant-energy-insights-monitor/issues)
+[![Buy Me a Pizza](https://img.shields.io/badge/Buy%20me%20a%20pizza-%F0%9F%8D%95-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mf3ebnouct)
+
 **Per-device energy intelligence for Home Assistant: energy, cost, solar self-sufficiency, appliance run cycles and standby waste — from just two sensors per device, configured entirely in YAML.**
 
 Point it at a device's power and energy sensors and it builds the whole analytical stack for you:
