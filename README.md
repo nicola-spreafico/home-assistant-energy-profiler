@@ -14,6 +14,36 @@
 
 **Per-device energy intelligence for Home Assistant: energy, cost, solar self-sufficiency, appliance run cycles and standby waste — from just two sensors per device, configured entirely in YAML.**
 
+## Why this integration exists
+
+> *"Do you want to know how each appliance in your home is really using your
+> self-produced energy — how much of the dishwasher's consumption came from
+> your own panels and how much was silently pulled from the grid?"*
+
+> *"Are you running the washing machine at the right time, so that it uses only
+> the clean energy of the sun? Did yesterday's cycle actually run on solar —
+> and what did it cost you?"*
+
+> *"How much money does the TV burn per year just sitting in standby, and is
+> the bedroom A/C running longer per cycle than it used to?"*
+
+Energy Profiler was created for these questions. The native **Energy Dashboard**
+is great at the *house* level — total consumption, solar production, grid
+import/export — and its individual-devices view stops at a bar of kWh per
+device. Everything behind that number is missing, and that is exactly what this
+integration provides:
+
+| | Native Energy Dashboard | Energy Profiler |
+| --- | --- | --- |
+| **Per-device consumption** | total kWh only | energy split into **total / running / standby**, each with per-period meters |
+| **Per-device solar share** | house-level only | solar-vs-grid (and optionally solar-vs-battery) split **per device**, as live power, energy and % |
+| **Per-device cost** | house-level cost only | € per device at the tariff valid *at the moment of consumption*, plus savings and grid-import cost |
+| **Appliance runs** | not tracked | cycles detected and validated, with per-run energy/cost/duration, means, lifetime totals |
+| **Standby waste** | invisible | measured continuously, with the same cost/solar breakdown as useful consumption |
+| **Automations** | none | events on completed/validated cycles and a ready-made `running`/`standby`/`poweroff` status |
+
+## What you get
+
 Point it at a device's power and energy sensors and it builds the whole analytical stack for you:
 
 - **Energy in three symmetric groups** — **total**, **running-only** and **standby-only**: each group exposes the same block (energy, solar/grid split, cost, savings/grid-cost, self-sufficiency %, per-period meters), so separating useful consumption from "vampire" waste never costs you the solar or cost breakdown
