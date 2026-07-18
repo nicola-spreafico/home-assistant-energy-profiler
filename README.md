@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="custom_components/energy_profiler/brand/icon.png" alt="Energy Profiler" width="128">
+</p>
+
 # Energy Profiler
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
