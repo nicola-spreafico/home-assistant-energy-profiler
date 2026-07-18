@@ -16,22 +16,26 @@
 
 ## Why this integration exists
 
-> *"Do you want to know how each appliance in your home is really using your
-> self-produced energy — how much of the dishwasher's consumption came from
-> your own panels and how much was silently pulled from the grid?"*
+> *"Your energy dashboard says the house is 70% self-sufficient. Good — but if
+> you want to **improve** that number, which device do you act on? Maybe the
+> dishwasher already runs at 95% and there is nothing left to optimize, while
+> the washing machine sits at 20% — that is where the effort pays off, for
+> example by washing when the sun is shining."*
 
-> *"Are you running the washing machine at the right time, so that it uses only
-> the clean energy of the sun? Did yesterday's cycle actually run on solar —
-> and what did it cost you?"*
+> *"Did yesterday's washing-machine cycle actually run on the clean energy of
+> the sun, or did it silently pull half of its load from the grid — and what
+> did it cost you?"*
 
 > *"How much money does the TV burn per year just sitting in standby, and is
 > the bedroom A/C running longer per cycle than it used to?"*
 
-Energy Profiler was created for these questions. The native **Energy Dashboard**
-is great at the *house* level — total consumption, solar production, grid
-import/export — and its individual-devices view stops at a bar of kWh per
-device. Everything behind that number is missing, and that is exactly what this
-integration provides:
+Energy Profiler was created for these questions. House-level graphs tell you
+*what* your self-sufficiency is, but not *where* to act to improve it — that
+takes the same solar/grid/cost breakdown **per device**. The native **Energy
+Dashboard** is great at the *house* level — total consumption, solar
+production, grid import/export — and its individual-devices view stops at a
+bar of kWh per device. Everything behind that number is missing, and that is
+exactly what this integration provides:
 
 | | Native Energy Dashboard | Energy Profiler |
 | --- | --- | --- |
