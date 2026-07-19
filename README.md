@@ -66,6 +66,10 @@ integration will refuse to set up.
 
 ## Quick Start
 
+### Only have a power sensor?
+
+`energy:` is **required** per device — this integration does not derive it for you, since Home Assistant already ships a native way to do that. If your device only reports instantaneous power (no cumulative energy), add a core [Integration - Riemann sum integral](https://www.home-assistant.io/integrations/integration/) sensor to turn that power reading into energy first, then point `energy:` at the resulting sensor.
+
 ### Shared defaults — once for the whole system
 
 Declare `defaults:` **exactly once**: it is the system-wide baseline every device inherits. Any key can then be overridden by a single device (or opted out with `null`). Thanks to Home Assistant's package merge, this block can live in its own file while the devices are spread across other packages.
