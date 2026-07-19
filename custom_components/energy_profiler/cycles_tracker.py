@@ -308,12 +308,16 @@ class CompletedValueSensor(_RestoreDecimal):
         self.async_write_ha_state()
 
 
-class CycleSnapshotSensor(SensorEntity):
+class CycleSnapshotSensor(RestoreSensor):
     """Timestamp of a cycle boundary, carrying the lifetimes at that instant as attrs.
 
     Reincarnates cycle_start_snapshot / cycle_stop_snapshot (cycles_002): the start
     snapshot exposes ``initial_*`` attributes, the stop snapshot ``final_*`` — read
     by the live and standby logic to bound a cycle.
+
+    Restored across restarts, because the pair of snapshots is the only record of
+    whether a cycle was left open: the tracker compares them to decide whether to
+    resume one (see ``CycleTrackerSensor._async_resume_open_cycle``).
     """
 
     _attr_should_poll = False
@@ -327,9 +331,44 @@ class CycleSnapshotSensor(SensorEntity):
         self._attr_icon = icon
         self._attr_native_value = None
         self._attr_extra_state_attributes = {}
+        self._restored = False
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self.async_ensure_restored()
+
+    async def async_ensure_restored(self) -> None:
+        """Restore the boundary timestamp and its baselines, exactly once.
+
+        Idempotent, and safe to call from the tracker before this entity has been
+        added: the restore cache only needs ``hass`` and ``entity_id``, both set in
+        ``__init__``. That keeps the resume independent of the order entities happen
+        to be added in.
+        """
+        if self._restored:
+            return
+        self._restored = True
+
+        last = await self.async_get_last_state()
+        if last is None or last.state in _INVALID:
+            return
+        if (when := dt_util.parse_datetime(last.state)) is None:
+            return
+
+        self._attr_native_value = when
+        # Only the cycle baselines: Home Assistant's own attributes (friendly_name,
+        # device_class, icon, ...) must not be resurrected as snapshot data.
+        self._attr_extra_state_attributes = {
+            key: value
+            for key, value in last.attributes.items()
+            if key.startswith(("initial_", "final_"))
+        }
 
     @callback
     def set_snapshot(self, when, attributes: dict) -> None:
+        # A live boundary supersedes whatever was stored: mark the restore done so
+        # a later ensure_restored() can never overwrite it with the old snapshot.
+        self._restored = True
         self._attr_native_value = when
         self._attr_extra_state_attributes = attributes
         self.async_write_ha_state()
@@ -595,10 +634,57 @@ class CycleTrackerSensor(_RestoreDecimal):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        await self._async_resume_open_cycle()
         self.async_on_remove(
             async_track_state_change_event(
                 self.hass, [self._running_entity], self._on_running_change
             )
+        )
+
+    async def _async_resume_open_cycle(self) -> None:
+        """Pick a cycle back up when Home Assistant restarted in the middle of it.
+
+        The boundary used to live in memory only, so every restart dropped it: the
+        run could no longer be closed (``_on_running_change`` needs ``_start_time``)
+        and the unknown->on edge a restart produces is deliberately ignored, so it
+        was never reopened either — the whole run was lost.
+
+        A cycle counts as still open when the start snapshot is **newer than the
+        stop** one: ``_close_cycle`` writes the stop and never clears the start, so
+        start > stop is exactly "opened and not yet closed". Restoring both
+        snapshots is therefore enough to tell the two situations apart.
+
+        Nothing is invented here. With no start on record, or with a start that a
+        stop already superseded, the behaviour is exactly what it was before. The
+        device's current state is deliberately *not* consulted: the running binary
+        sensor lives on another platform and may not have been added yet, and a
+        stale start left over from downtime is harmless — the next genuine off->on
+        edge overwrites it through ``_open_cycle``.
+
+        A run that really ended while Home Assistant was down is closed on the next
+        off edge with the gap folded in; that is what ``max_duration`` is there to
+        reject.
+        """
+        await self._start_snapshot.async_ensure_restored()
+        await self._stop_snapshot.async_ensure_restored()
+
+        start_time = self._start_snapshot.native_value
+        if start_time is None:
+            return
+        stop_time = self._stop_snapshot.native_value
+        if stop_time is not None and stop_time >= start_time:
+            return  # the last cycle was closed normally; nothing to resume
+
+        attributes = self._start_snapshot.extra_state_attributes or {}
+        self._start_time = start_time
+        self._start = {
+            name: _to_float(attributes.get(f"initial_{name}"))
+            for name, *_ in self._metrics
+        }
+        _LOGGER.info(
+            "%s: resuming the cycle opened at %s, still open across the restart",
+            self.entity_id,
+            start_time,
         )
 
     @callback
