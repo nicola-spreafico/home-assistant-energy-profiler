@@ -1,5 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Example: run detection and cycle analytics
+# Levels 5 and 7 — see docs/levels/05-running.md and docs/levels/07-cycles.md
 # ─────────────────────────────────────────────────────────────────────────────
 # Two separate concepts:
 #   running:        the detection SIGNAL — creates binary_sensor.<prefix>_running

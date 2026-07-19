@@ -1,5 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Example: self-sufficiency split (solar vs. grid)
+# Levels 3-4 — see docs/levels/03-self-sufficiency.md and docs/levels/04-solar-battery.md
 # ─────────────────────────────────────────────────────────────────────────────
 # Adds a solar/grid breakdown on top of the basic consumption. A house-wide
 # self-sufficiency percentage entity (0–100 %, e.g. how much of the current draw

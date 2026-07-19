@@ -1,5 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Example: standby tracking
+# Level 6 — see docs/levels/06-standby.md
 # ─────────────────────────────────────────────────────────────────────────────
 # Tracks the energy (and its cost) a device draws while in standby — the
 # "vampire" consumption. Everything is gated on binary_sensor.<prefix>_standby,

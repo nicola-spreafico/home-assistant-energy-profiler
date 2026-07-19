@@ -1,5 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Example: full fleet configuration
+# All levels 1-7 — see docs/levels/01-energy.md onwards
 # ─────────────────────────────────────────────────────────────────────────────
 # Shows shared `defaults` plus a mix of devices exercising every option. Each
 # device inherits the defaults and overrides only what it needs.

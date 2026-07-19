@@ -53,7 +53,7 @@ Global values inherited by every device that does not override them.
 
 ## Running detection (`running:`)
 
-A **signal**: declaring it creates `binary_sensor.<prefix>_running` and enables the **running energy group** — the same energy/split/cost stack as the total, accumulated only while running (see [Entities](entities.md#energy-groups--total-running-standby)). Other consumers hang on the signal explicitly: [`cycle_tracking:`](#cycle-analytics-cycle_tracking) for run analytics, and the default flavor of [`standby:`](#standby-standby). Unlike the cycles family, the running group counts *every* running moment, validated or not — it is what lets you split running vs standby consumption without tracking cycles.
+A **signal**: declaring it creates `binary_sensor.<prefix>_running` and enables the **running energy group** — the same energy/split/cost stack as the total, accumulated only while running (see [Entity reference](entities.md#the-three-energy-groups), or [Level 5](levels/05-running.md) for the guided version). Other consumers hang on the signal explicitly: [`cycle_tracking:`](#cycle-analytics-cycle_tracking) for run analytics, and the default flavor of [`standby:`](#standby-standby). Unlike the cycles family, the running group counts *every* running moment, validated or not — it is what lets you split running vs standby consumption without tracking cycles.
 
 Two trigger flavors:
 
@@ -91,7 +91,7 @@ running:
 
 ## Cycle analytics (`cycle_tracking:`)
 
-The analytics **consumer** of the running signal: counts each run with its duration, energy, cost, solar split, … (the full output is in [Cycle tracking entities](entities-cycles.md)). Requires `running:`; without it the family is skipped with a warning.
+The analytics **consumer** of the running signal: counts each run with its duration, energy, cost, solar split, … (the full output is in [Level 7 — Cycles](levels/07-cycles.md)). Requires `running:`; without it the family is skipped with a warning.
 
 ```yaml
 cycle_tracking: true          # analytics, no plausibility limits
