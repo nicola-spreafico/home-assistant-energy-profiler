@@ -61,7 +61,7 @@ Every id below exists twice: as `_lifetime` 💤 ↺ (shown) and as one `_<perio
 
 Same shape as the total group. The only thing that does **not** reappear here is `_energy_cost_instant_*`: those read raw power, which no gate applies to.
 
-**Inventory —** fully configured, with `[daily, monthly, yearly]`: **38 new entities** (83 cumulative) — the signal, the status label, and 36 for the group.
+**Inventory —** fully configured, with `[daily, monthly, yearly]`: **38 new entities** (85 cumulative) — the signal, the status label, and 36 for the group.
 
 ## Gating is safe by construction
 

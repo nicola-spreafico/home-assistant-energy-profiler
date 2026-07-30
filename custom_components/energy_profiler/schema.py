@@ -29,6 +29,8 @@ from .const import (
     CONF_NAME_SUFFIX,
     CONF_LIVE_UPDATE_INTERVAL,
     CONF_PERIODS,
+    CONF_INSTANT_PERIODS,
+    CONF_COST_PRECISION,
     CONF_NAME,
     CONF_POWER,
     CONF_ENERGY,
@@ -47,6 +49,7 @@ from .const import (
     CONF_STATE,
     DEFAULT_NAME_SUFFIX,
     DEFAULT_PERIODS,
+    DEFAULT_COST_PRECISION,
 )
 
 PERIOD = vol.In(["hourly", "daily", "weekly", "monthly", "bimonthly", "quarterly", "yearly"])
@@ -137,6 +140,13 @@ DEFAULTS_SCHEMA = vol.Schema(
         vol.Optional(CONF_NAME_SUFFIX, default=DEFAULT_NAME_SUFFIX): cv.string,
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PERIODS, default=DEFAULT_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
+        # No default on purpose: absent means "follow periods". An explicit list
+        # (including the empty one, which switches them off) overrides that.
+        vol.Optional(CONF_INSTANT_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
+        # Decimals shown by the € entities. Display only — see DEFAULT_COST_PRECISION.
+        vol.Optional(CONF_COST_PRECISION, default=DEFAULT_COST_PRECISION): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=10)
+        ),
     }
 )
 
@@ -153,6 +163,10 @@ DEVICE_SCHEMA = vol.Schema(
         vol.Exclusive(CONF_BATTERY_SHARE_SOURCE, "self_split"): vol.Any(None, cv.entity_id),
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
+        vol.Optional(CONF_INSTANT_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
+        vol.Optional(CONF_COST_PRECISION): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=10)
+        ),
         # Signals and their consumers.
         vol.Optional(CONF_RUNNING): RUNNING_SCHEMA,
         vol.Optional(CONF_CYCLE_TRACKING): CYCLE_TRACKING_SCHEMA,

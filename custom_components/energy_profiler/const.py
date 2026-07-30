@@ -17,6 +17,8 @@ CONF_BATTERY_SHARE_SOURCE = "battery_share_source"
 CONF_NAME_SUFFIX = "name_suffix"                       # entitiesPrefixEnd (default "_em")
 CONF_LIVE_UPDATE_INTERVAL = "live_update_interval"
 CONF_PERIODS = "periods"                               # which lean meter periods to create
+CONF_INSTANT_PERIODS = "instant_periods"               # overrides periods for the instant cost projections
+CONF_COST_PRECISION = "cost_precision"                 # decimals *shown* by the € entities (display only)
 
 # Per-device keys
 CONF_NAME = "name"                                     # entitiesPrefix
@@ -42,6 +44,14 @@ CONF_OFF_ABOVE = "off_above"                           # standby ends when power
 # Defaults
 DEFAULT_NAME_SUFFIX = "_em"
 DEFAULT_PERIODS = ["daily", "monthly", "yearly"]
+# Cost accumulators integrate in Decimal and are deliberately never rounded, so
+# their raw state carries ~10 decimals. This caps what the UI *shows* (cents),
+# nothing else: the stored state and the statistics keep their full precision.
+DEFAULT_COST_PRECISION = 2
+# Percentages carry no device class, so HA has no default precision for them
+# either (same gap as MONETARY) and would render the raw state. Not exposed as an
+# option: a tenth of a point is enough for a self-sufficiency reading.
+DEFAULT_PERCENTAGE_PRECISION = 1
 
 # Feature families. The energy groups (total/running/standby) share one stack
 # builder (families/energy_stack.py); cost and solar-split are sub-blocks of

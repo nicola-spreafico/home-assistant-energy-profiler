@@ -44,6 +44,7 @@ def build_period_meters(
     device_class,
     net_consumption: bool = False,
     absolute_values: bool = False,
+    display_precision: int | None = None,
 ) -> list[dict]:
     """Return one Lean meter *spec* per requested cycle for a device sub-metric.
 
@@ -51,6 +52,9 @@ def build_period_meters(
     e.g. prefix ``foo_em`` + suffix ``energy`` + cycle ``daily`` ->
     ``sensor.foo_em_energy_daily``. The sensor platform forwards these specs to
     the lean_utility_meter platform, which instantiates the actual entities.
+
+    ``display_precision`` caps the decimals the meters *show* (None = let the
+    device class decide). Meters accumulate at full precision regardless.
     """
     prefix = device["prefix"]
     periods = device.get("periods") or ["daily", "monthly", "yearly"]
@@ -62,27 +66,30 @@ def build_period_meters(
             _LOGGER.warning("Skipping unsupported period %r for %s", cycle, prefix)
             continue
         slug = f"{prefix}_{name_suffix}_{cycle}"
-        specs.append(
-            {
-                "source": source,
-                "name": slug,
-                "unique_id": slug,
-                # Pin the entity_id so it matches the historical snapshot ids
-                # exactly (same entity_id -> same LTS series).
-                "entity_id": f"sensor.{slug}",
-                "cycle": cycle,
-                "parent_meter": slug,
-                "live_update_interval": live_update_interval,
-                "net_consumption": net_consumption,
-                "absolute_values": absolute_values,
-                "always_available": True,
-                "periodically_resetting": True,
-                # Force presentation instead of inheriting it from the source
-                # entity (the old generator had to pin these via
-                # ``homeassistant.customize``); explicit None means "no value".
-                "unit_of_measurement": unit,
-                "device_class": device_class,
-                "state_class": SensorStateClass.TOTAL,
-            }
-        )
+        spec = {
+            "source": source,
+            "name": slug,
+            "unique_id": slug,
+            # Pin the entity_id so it matches the historical snapshot ids
+            # exactly (same entity_id -> same LTS series).
+            "entity_id": f"sensor.{slug}",
+            "cycle": cycle,
+            "parent_meter": slug,
+            "live_update_interval": live_update_interval,
+            "net_consumption": net_consumption,
+            "absolute_values": absolute_values,
+            "always_available": True,
+            "periodically_resetting": True,
+            # Force presentation instead of inheriting it from the source
+            # entity (the old generator had to pin these via
+            # ``homeassistant.customize``); explicit None means "no value".
+            "unit_of_measurement": unit,
+            "device_class": device_class,
+            "state_class": SensorStateClass.TOTAL,
+        }
+        # Same convention: an absent key means "inherit", so only pin the
+        # precision when the caller asked for one.
+        if display_precision is not None:
+            spec["suggested_display_precision"] = display_precision
+        specs.append(spec)
     return specs

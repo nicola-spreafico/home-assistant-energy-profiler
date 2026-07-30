@@ -15,20 +15,26 @@ periods:
 - ``<base>_self_sufficiency`` (+ gauge meters)         live % ratio        [needs self_sufficiency_source]
 
 The total group additionally gets the instantaneous cost projections
-(``<base>_cost_instant_*``). The gated groups source the *decoupled* total
-lifetime, so every group inherits the reset/plug-swap protection.
+(``<base>_cost_instant_*`` and, with a self-sufficiency source,
+``<base>_cost_instant_from_grid_*``), one per instant period: the device's
+``instant_periods:`` when set, otherwise its ``periods:``. The gated groups
+source the *decoupled* total lifetime, so every group inherits the
+reset/plug-swap protection.
 """
 
 from homeassistant.components.sensor import SensorDeviceClass
 
 from ..const import (
     CONF_BATTERY_SHARE_SOURCE,
+    CONF_COST_PRECISION,
     CONF_ENERGY_PRICE,
     CONF_POWER,
     CONF_SELF_SUFFICIENCY_SOURCE,
     CONF_SOLAR_SHARE_SOURCE,
+    DEFAULT_COST_PRECISION,
+    DEFAULT_PERCENTAGE_PRECISION,
 )
-from ..instant import INSTANT_COST_VARIANTS, InstantCostSensor
+from ..instant import INSTANT_COST_PERIODS, InstantCostSensor, resolve_instant_periods
 from ..integrator import EnergyCostIntegratorSensor
 from ..lean import build_period_meters
 from ..lifetime import EnergyLifetimeSensor, GatedEnergyAccumulator
@@ -62,6 +68,8 @@ def build_stack(
     base = f"{prefix}_{name_base}"
     price = device.get(CONF_ENERGY_PRICE)
     ratio = device.get(CONF_SELF_SUFFICIENCY_SOURCE)
+    cost_precision = device.get(CONF_COST_PRECISION, DEFAULT_COST_PRECISION)
+    instant_periods = resolve_instant_periods(device) if include_instant else []
     ENERGY = SensorDeviceClass.ENERGY
     MONEY = SensorDeviceClass.MONETARY
 
@@ -145,19 +153,23 @@ def build_stack(
             EnergyCostIntegratorSensor(
                 hass, slug=cost_lifetime,
                 energy_source=f"sensor.{lifetime_slug}", price_source=price,
+                display_precision=cost_precision,
             )
         )
         entities += build_period_meters(
             hass, device, source=f"sensor.{cost_lifetime}",
             name_suffix=f"{name_base}_cost", unit="€", device_class=MONEY,
+            display_precision=cost_precision,
         )
         # Instantaneous cost-rate projections (power × price): total group only —
-        # they read the raw power sensor, which no gate applies to.
+        # they read the raw power sensor, which no gate applies to. One variant per
+        # instant period (``instant_periods:``, else the device's ``periods:``).
         if include_instant:
-            for suffix, unit, factor in INSTANT_COST_VARIANTS:
+            for period in instant_periods:
+                unit, factor = INSTANT_COST_PERIODS[period]
                 entities.append(
                     InstantCostSensor(
-                        hass, slug=f"{base}_cost_instant_{suffix}",
+                        hass, slug=f"{base}_cost_instant_{period}",
                         power_source=device[CONF_POWER], price_source=price,
                         factor=factor, unit=unit,
                     )
@@ -172,21 +184,42 @@ def build_stack(
                 hass, slug=savings_lifetime,
                 energy_source=f"sensor.{base}_from_self_lifetime",
                 price_source=price, icon=ICON_SAVINGS,
+                display_precision=cost_precision,
             ),
             EnergyCostIntegratorSensor(
                 hass, slug=grid_cost_lifetime,
                 energy_source=f"sensor.{base}_from_grid_lifetime",
                 price_source=price, icon=ICON_GRID_COST,
+                display_precision=cost_precision,
             ),
         ]
         entities += build_period_meters(
             hass, device, source=f"sensor.{savings_lifetime}",
             name_suffix=f"{name_base}_from_grid_savings", unit="€", device_class=MONEY,
+            display_precision=cost_precision,
         )
         entities += build_period_meters(
             hass, device, source=f"sensor.{grid_cost_lifetime}",
             name_suffix=f"{name_base}_from_grid_cost", unit="€", device_class=MONEY,
+            display_precision=cost_precision,
         )
+        # Grid-only counterpart of the instantaneous projections above. Same sensor,
+        # fed the *grid share* of the draw instead of the whole of it, so it answers
+        # "what is this actually costing me right now" once self-production is
+        # netted off. The qualifier trails ``cost_instant`` (rather than sitting in
+        # the canonical ``_from_grid_`` slot) to keep the eight projections sorting
+        # as one family in the UI.
+        if include_instant:
+            for period in instant_periods:
+                unit, factor = INSTANT_COST_PERIODS[period]
+                entities.append(
+                    InstantCostSensor(
+                        hass, slug=f"{base}_cost_instant_from_grid_{period}",
+                        power_source=f"sensor.{prefix}_power_from_grid",
+                        price_source=price, factor=factor, unit=unit,
+                        icon=ICON_GRID_COST,
+                    )
+                )
 
     # Self-sufficiency %: a live ratio, consolidated to one LTS gauge point per
     # period (absolute_values + net_consumption: a gauge, not a cumulative sum).
@@ -203,6 +236,7 @@ def build_stack(
             hass, device, source=f"sensor.{ss_lifetime}",
             name_suffix=f"{name_base}_self_sufficiency", unit="%", device_class=None,
             net_consumption=True, absolute_values=True,
+            display_precision=DEFAULT_PERCENTAGE_PRECISION,
         )
 
     return entities

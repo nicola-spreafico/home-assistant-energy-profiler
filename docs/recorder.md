@@ -7,7 +7,9 @@ This integration creates many entities per device, and they are **not all equal*
 ## The three classes of entities
 
 **1. Period meters — must NOT be recorded.**
-Every per-period meter (`…_energy_daily`, `…_energy_cost_monthly`, `…_cycles_count_yearly`, every entity ending in a period suffix: `_hourly`, `_daily`, `_weekly`, `_monthly`, `_bimonthly`, `_quarterly`, `_yearly`) is backed by the Lean core and **writes its own long-term statistics** — one consolidated row per period. If the recorder also records these entities, Home Assistant compiles its own hourly statistics *into the same series*: you get duplicate rows on two different baselines, and the graphs show impossible jumps. This is not hypothetical — see [What happens if you get it wrong](#what-happens-if-you-get-it-wrong).
+Every per-period meter (`…_energy_daily`, `…_energy_cost_monthly`, `…_cycles_count_yearly` — a period suffix `_hourly`, `_daily`, `_weekly`, `_monthly`, `_bimonthly`, `_quarterly` or `_yearly` in the **`lifetime` slot**, i.e. where the entity would otherwise end in `_lifetime`) is backed by the Lean core and **writes its own long-term statistics** — one consolidated row per period. If the recorder also records these entities, Home Assistant compiles its own hourly statistics *into the same series*: you get duplicate rows on two different baselines, and the graphs show impossible jumps. This is not hypothetical — see [What happens if you get it wrong](#what-happens-if-you-get-it-wrong).
+
+> **The one exception to "ends in a period suffix".** The instantaneous cost projections — `…_energy_cost_instant_<period>` and `…_cost_instant_from_grid_<period>` — end in the same words but are **not** period meters: they are live projections of the current draw, and belong to class 2 below. There the period names a *rate* (€ per day), not an accumulation window. Excluding them is right; treating them as Lean meters is not.
 
 **2. Live/accumulator entities — recording is pure bloat.**
 The `…_lifetime` accumulators, the instantaneous projections (`…_energy_cost_instant_*`), the in-progress cycle views (`…_cycle_live_*`), the power split (`…_power_from_self/grid`) and `…_standby_duration` update very frequently (some on every power tick). They survive restarts through Home Assistant's state restore mechanism, so the recorder adds nothing but thousands of rows per day. Exclude them.
@@ -17,7 +19,7 @@ A short list of entities changes only at meaningful moments (a cycle closes) and
 
 | Entity | Why record it |
 | --- | --- |
-| `sensor.<prefix>_cycle_completed_*` | one value per closed cycle — the per-run history of energy/cost/duration/… |
+| `sensor.<prefix>_cycle_completed_*` | one value per valid cycle — the per-run history of energy/cost/duration/… |
 | `sensor.<prefix>_cycles_*_mean` | slow-moving averages, nice to graph over time |
 | `sensor.<prefix>_cycle_validation_status` | audit trail of accepted/discarded cycles |
 | `sensor.<prefix>_power_max` | peak power history |

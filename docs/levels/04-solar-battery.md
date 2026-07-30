@@ -55,7 +55,7 @@ template:
 | `sensor.<p>_energy_from_solar_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | Energy taken directly from the panels |
 | `sensor.<p>_energy_from_battery_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | Energy taken from battery discharge — the exact remainder |
 
-**Inventory —** with `[daily, monthly, yearly]`: **10 new entities** (45 cumulative).
+**Inventory —** with `[daily, monthly, yearly]`: **10 new entities** (47 cumulative).
 
 ```
 sensor.<p>_power_from_solar / _power_from_battery
@@ -77,7 +77,7 @@ Both levels are exact: `from_self + from_grid` = total, and `from_solar + from_b
 
 ## Milestone: the block is complete
 
-45 entities, and the measurement block is now everything this integration knows how to say about a slice of consumption. **Levels 5 to 7 do not add new kinds of sensor — they replicate this same block over differently-gated slices.** That is the whole mental model, and why a fully-equipped device reaches 173 entities.
+47 entities, and the measurement block is now everything this integration knows how to say about a slice of consumption. **Levels 5 to 7 do not add new kinds of sensor — they replicate this same block over differently-gated slices.** That is the whole mental model, and why a fully-equipped device reaches 177 entities.
 
 ## Next
 

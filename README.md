@@ -86,23 +86,23 @@ Then configure the recorder — this part is **not optional**: the period meters
 
 ## The levels
 
-A fully-equipped device exposes **173 entities** — which is a lot to meet all at once. So don't: the integration is built as a ladder, and every rung is useful on its own. Each level asks one question about what you already have, and answers with a specific set of sensors.
+A fully-equipped device exposes **177 entities** — which is a lot to meet all at once. So don't: the integration is built as a ladder, and every rung is useful on its own. Each level asks one question about what you already have, and answers with a specific set of sensors.
 
 | Level | You have… | You get | New | Total |
 | --- | --- | --- | --- | --- |
 | **[1 — Energy](docs/levels/01-energy.md)** | a power and an energy sensor | consumption per period, on a database diet | 5 | 5 |
-| **[2 — Cost](docs/levels/02-cost.md)** | …and an electricity price | € at the tariff of the moment, plus live projections | 8 | 13 |
-| **[3 — Self-sufficiency](docs/levels/03-self-sufficiency.md)** | …and a self-sufficiency % | solar-vs-grid split per device, savings and grid cost | 22 | 35 |
-| **[4 — Solar vs battery](docs/levels/04-solar-battery.md)** | …and a solar-share % | how much was sunshine, how much was the battery | 10 | 45 |
-| **[5 — Running](docs/levels/05-running.md)** | a way to tell "on" from "off" | the whole block again, over running time only | 38 | 83 |
-| **[6 — Standby](docs/levels/06-standby.md)** | a way to spot idle draw | the whole block again, over vampire waste | 38 | 121 |
-| **[7 — Cycles](docs/levels/07-cycles.md)** | appliances that run in cycles | per-run energy, cost and solar share, with events | 52 | 173 |
+| **[2 — Cost](docs/levels/02-cost.md)** | …and an electricity price | € at the tariff of the moment, plus live projections | 7 | 12 |
+| **[3 — Self-sufficiency](docs/levels/03-self-sufficiency.md)** | …and a self-sufficiency % | solar-vs-grid split per device, savings and grid cost | 25 | 37 |
+| **[4 — Solar vs battery](docs/levels/04-solar-battery.md)** | …and a solar-share % | how much was sunshine, how much was the battery | 10 | 47 |
+| **[5 — Running](docs/levels/05-running.md)** | a way to tell "on" from "off" | the whole block again, over running time only | 38 | 85 |
+| **[6 — Standby](docs/levels/06-standby.md)** | a way to spot idle draw | the whole block again, over vampire waste | 38 | 123 |
+| **[7 — Cycles](docs/levels/07-cycles.md)** | appliances that run in cycles | per-run energy, cost and solar share, with events | 54 | 177 |
 
 Counts assume the default `periods: [daily, monthly, yearly]` and every optional source configured; fewer options mean fewer entities.
 
 **Levels 1–4 ask what you can measure.** Each optional source adds a sub-block: a price brings cost, a self-sufficiency percentage brings the solar/grid split, a solar share splits that again into panels versus battery. They also compose — a price *and* a percentage together unlock savings and grid cost, which neither gives alone.
 
-**Levels 5–7 ask which slice you measure it over.** They add no new kind of sensor: they replicate the block you already built over a gated slice of the consumption. Teach the integration to tell running from idle and you get the same energy, cost and solar breakdown for running time and for standby waste, separately. That multiplication is exactly why the total reaches 173 — and why it is far less to learn than the number suggests.
+**Levels 5–7 ask which slice you measure it over.** They add no new kind of sensor: they replicate the block you already built over a gated slice of the consumption. Teach the integration to tell running from idle and you get the same energy, cost and solar breakdown for running time and for standby waste, separately. That multiplication is exactly why the total reaches 177 — and why it is far less to learn than the number suggests.
 
 Stop at any rung. Level 1 alone is a complete, useful setup.
 

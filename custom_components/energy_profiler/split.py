@@ -29,6 +29,8 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 
+from .const import DEFAULT_PERCENTAGE_PRECISION
+
 _LOGGER = logging.getLogger(__name__)
 
 # Energy deltas above this (kWh) are treated as meter resets / spikes and skipped.
@@ -171,6 +173,8 @@ class SelfSufficiencyRatioSensor(SensorEntity):
     _attr_should_poll = False
     _attr_native_unit_of_measurement = "%"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    # Display only: the state keeps the 6 decimals the ratio is computed to.
+    _attr_suggested_display_precision = DEFAULT_PERCENTAGE_PRECISION
 
     def __init__(
         self,

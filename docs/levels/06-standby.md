@@ -69,7 +69,7 @@ Every id below exists twice: as `_lifetime` 💤 ↺ (shown) and as one `_<perio
 | `sensor.<p>_standby_energy_from_grid_savings_lifetime` / `…_from_grid_cost_lifetime` | [L2](02-cost.md) + [L3](03-self-sufficiency.md) | Savings and grid cost of the standby slice |
 | `sensor.<p>_standby_energy_self_sufficiency_lifetime` | [L3](03-self-sufficiency.md) | Self-sufficiency % while idle (period meters are gauges) |
 
-**Inventory —** fully configured, with `[daily, monthly, yearly]`: **38 new entities** (121 cumulative) — the gatekeeper, the duration, and 36 for the group.
+**Inventory —** fully configured, with `[daily, monthly, yearly]`: **38 new entities** (123 cumulative) — the gatekeeper, the duration, and 36 for the group.
 
 If [Level 5](05-running.md) is also configured, `sensor.<p>_status` now reports the full ladder: `running` > `standby` > `poweroff`. With standby alone it reports `standby` / `poweron` (out of standby = actively drawing).
 

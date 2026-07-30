@@ -135,10 +135,12 @@ class CycleSumAccumulatorSensor(_RestoreDecimal):
         device_class: SensorDeviceClass | None,
         icon: str,
         name: str | None = None,
+        display_precision: int | None = None,
     ) -> None:
         super().__init__(hass, slug=slug, icon=icon, name=name)
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
+        self._attr_suggested_display_precision = display_precision
 
     @callback
     def add(self, delta: Decimal) -> None:
@@ -162,6 +164,7 @@ class MeanSensor(SensorEntity):
         device_class: SensorDeviceClass | None,
         icon: str,
         name: str | None = None,
+        display_precision: int | None = None,
     ) -> None:
         self.hass = hass
         self.entity_id = f"sensor.{slug}"
@@ -170,6 +173,7 @@ class MeanSensor(SensorEntity):
         self._attr_icon = icon
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
+        self._attr_suggested_display_precision = display_precision
         self._total_entity = total_entity
         self._count_entity = count_entity
         self._attr_native_value = None
@@ -286,7 +290,11 @@ class HumanDurationSensor(SensorEntity):
 
 
 class CompletedValueSensor(_RestoreDecimal):
-    """The last completed cycle's value (energy or duration), updated on cycle end."""
+    """The last **valid** cycle's value (energy or duration), updated on cycle end.
+
+    Written only when the closing cycle passes the limits, in step with the counters:
+    a discarded run leaves the previous one's values frozen.
+    """
 
     def __init__(
         self,
@@ -297,14 +305,62 @@ class CompletedValueSensor(_RestoreDecimal):
         device_class: SensorDeviceClass | None,
         icon: str,
         name: str | None = None,
+        display_precision: int | None = None,
     ) -> None:
         super().__init__(hass, slug=slug, icon=icon, name=name)
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
+        # None = let the device class decide (or show the raw state when, like the
+        # percentages, there is no device class to decide for it).
+        self._attr_suggested_display_precision = display_precision
 
     @callback
     def set(self, value: Decimal) -> None:
         self._value = value
+        self.async_write_ha_state()
+
+
+class CompletedTimestampSensor(RestoreSensor):
+    """A boundary of the last valid cycle, frozen until the next valid one closes.
+
+    The start/stop snapshot pair cannot answer "when did the last cycle run?". The
+    start snapshot is overwritten the instant a new cycle opens, and ``_close_cycle``
+    never clears it, because ``start > stop`` is exactly what marks a cycle still
+    open (see ``CycleTrackerSensor._async_resume_open_cycle``). While a cycle runs
+    the pair is therefore one cycle apart: the start describes the *running* cycle,
+    the stop the *previous* one — read together they show a cycle that started after
+    it ended.
+
+    These two sensors are written together in ``_close_cycle``, only for a cycle that
+    passes the limits, and never move until the next valid close — so they always
+    describe the same run as the rest of the ``completed_*`` family. They reincarnate
+    ``cycle_completed_start`` / ``cycle_completed_stop`` from ``cycles_005``, which
+    existed for this very reason.
+
+    Restored across restarts, like the rest of the ``completed_*`` family.
+    """
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, hass: HomeAssistant, *, slug: str, icon: str, name: str | None = None) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is None or last.state in _INVALID:
+            return
+        self._attr_native_value = dt_util.parse_datetime(last.state)
+
+    @callback
+    def set(self, when) -> None:
+        self._attr_native_value = when
         self.async_write_ha_state()
 
 
@@ -314,6 +370,10 @@ class CycleSnapshotSensor(RestoreSensor):
     Reincarnates cycle_start_snapshot / cycle_stop_snapshot (cycles_002): the start
     snapshot exposes ``initial_*`` attributes, the stop snapshot ``final_*`` — read
     by the live and standby logic to bound a cycle.
+
+    These are markers for the cycle **in progress**, not a description of the last
+    completed one: the two are one cycle apart while a cycle runs. Use
+    ``CompletedTimestampSensor`` for the frozen boundaries of the last valid cycle.
 
     Restored across restarts, because the pair of snapshots is the only record of
     whether a cycle was left open: the tracker compares them to decide whether to
@@ -412,6 +472,7 @@ class CycleLiveSensor(SensorEntity):
         self, hass: HomeAssistant, *, slug: str, source_entity: str, snapshot_entity: str,
         initial_attr: str, running_entity: str, unit: str,
         device_class: SensorDeviceClass | None, icon: str, name: str | None = None,
+        display_precision: int | None = None,
     ) -> None:
         self.hass = hass
         self.entity_id = f"sensor.{slug}"
@@ -420,6 +481,7 @@ class CycleLiveSensor(SensorEntity):
         self._attr_icon = icon
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
+        self._attr_suggested_display_precision = display_precision
         self._source = source_entity
         self._snapshot = snapshot_entity
         self._initial_attr = initial_attr
@@ -606,6 +668,8 @@ class CycleTrackerSensor(_RestoreDecimal):
         completed_duration: CompletedValueSensor,
         start_snapshot: CycleSnapshotSensor,
         stop_snapshot: CycleSnapshotSensor,
+        completed_start: CompletedTimestampSensor,
+        completed_stop: CompletedTimestampSensor,
         validation: CycleValidationSensor,
         limits: dict | None = None,
         on_delay=None,
@@ -623,6 +687,8 @@ class CycleTrackerSensor(_RestoreDecimal):
         self._completed_duration = completed_duration
         self._start_snapshot = start_snapshot
         self._stop_snapshot = stop_snapshot
+        self._completed_start = completed_start
+        self._completed_stop = completed_stop
         self._validation = validation
         self._limits = limits or {}
         self._on_delay = on_delay
@@ -722,36 +788,47 @@ class CycleTrackerSensor(_RestoreDecimal):
     def _close_cycle(self) -> None:
         now = dt_util.utcnow()
         stop_time = now - self._off_delay if self._off_delay else now
-        duration_s = max(0.0, (stop_time - self._start_time).total_seconds())
+        start_time = self._start_time
+        duration_s = max(0.0, (stop_time - start_time).total_seconds())
         self._start_time = None
 
         deltas: dict[str, float] = {}
         finals: dict[str, float | None] = {}
-        for name, src, completed, _acc in self._metrics:
+        for name, src, _completed, _acc in self._metrics:
             cur = self._value_of(src)
             finals[name] = cur
             start = self._start.get(name)
             delta = max(0.0, cur - start) if cur is not None and start is not None else 0.0
             deltas[name] = delta
-            completed.set(Decimal(str(delta)))
 
         energy = deltas.get("energy")
         valid, status = _validate(duration_s, energy, self._limits)
 
-        # Snapshots, duration and derived completed values (always written).
+        # Written on every close, valid or not. The stop snapshot in particular must
+        # not be gated: a discarded cycle is still *closed*, and leaving start > stop
+        # would make _async_resume_open_cycle reopen it after the next restart.
         self._stop_snapshot.set_snapshot(stop_time, {f"final_{name}": finals[name] for name in finals})
-        self._completed_duration.set(Decimal(str(duration_s)))
-        if self._completed_ss is not None and energy and "from_self" in deltas:
-            self._completed_ss.set(Decimal(str(round(deltas["from_self"] / energy * 100, 3))))
-        if self._completed_cot is not None and "cost" in deltas and duration_s > 0:
-            self._completed_cot.set(Decimal(str(round(deltas["cost"] / (duration_s / 3600), 3))))
         self._validation.set(status)
 
         if valid:
+            # The completed_* family describes the last *valid* run, in step with the
+            # counters below: a discarded cycle leaves the previous run's values
+            # frozen rather than overwriting them with a run nothing else counted.
+            # (The old cycles_005 package gated this the same way, by triggering off
+            # the counter instead of off the running edge.)
+            self._completed_start.set(start_time)
+            self._completed_stop.set(stop_time)
+            self._completed_duration.set(Decimal(str(duration_s)))
+            if self._completed_ss is not None and energy and "from_self" in deltas:
+                self._completed_ss.set(Decimal(str(round(deltas["from_self"] / energy * 100, 3))))
+            if self._completed_cot is not None and "cost" in deltas and duration_s > 0:
+                self._completed_cot.set(Decimal(str(round(deltas["cost"] / (duration_s / 3600), 3))))
+
             self._value += Decimal(1)
             self.async_write_ha_state()
             self._duration_acc.add(Decimal(str(duration_s)))
-            for name, _src, _completed, acc in self._metrics:
+            for name, _src, completed, acc in self._metrics:
+                completed.set(Decimal(str(deltas[name])))
                 if acc is not None:
                     acc.add(Decimal(str(deltas[name])))
             event_name = EVENT_CYCLE_COMPLETED

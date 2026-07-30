@@ -25,6 +25,8 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 
+from .const import DEFAULT_COST_PRECISION
+
 _LOGGER = logging.getLogger(__name__)
 
 # Ignore energy deltas above this (kWh) — a meter reset or a smart-plug swap shows
@@ -62,8 +64,12 @@ class EnergyCostIntegratorSensor(RestoreSensor):
         max_delta: float = DEFAULT_MAX_DELTA,
         icon: str = "mdi:currency-eur",
         name: str | None = None,
+        display_precision: int | None = DEFAULT_COST_PRECISION,
     ) -> None:
         self.hass = hass
+        # Display only. The running total below is never rounded — rounding it
+        # would leak or gain cents over a lifetime of accumulation.
+        self._attr_suggested_display_precision = display_precision
         self.entity_id = f"sensor.{slug}"
         self._attr_unique_id = slug
         self._attr_name = name or slug

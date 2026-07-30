@@ -37,6 +37,8 @@ Global values inherited by every device that does not override them.
 | `name_suffix` | string | `_em` | Appended to each device `name` to form the entity prefix (`<name><name_suffix>`); useful to namespace the whole fleet |
 | `live_update_interval` | duration | `00:05:00` | Throttle for the Lean meters' live LTS upserts (period boundaries are always written exactly). Passed through to every meter |
 | `periods` | list | `[daily, monthly, yearly]` | Which per-period meters every device gets: `hourly`, `daily`, `weekly`, `monthly`, `bimonthly`, `quarterly`, `yearly` |
+| `instant_periods` | list | follows `periods` | Which [instantaneous cost projections](entities.md#instantaneous-cost-projections) to build. Same vocabulary as `periods`. Omit to keep the two aligned; `[]` switches the projections off |
+| `cost_precision` | integer 0–10 | `2` | Decimals **shown** by the € entities. Display only: the cost accumulators integrate in `Decimal` and are never rounded, so no cent is ever gained or lost — this only caps the decimals the UI renders. A precision you set by hand on a single entity still wins over it |
 
 ## Device base options
 
@@ -50,6 +52,8 @@ Global values inherited by every device that does not override them.
 | `solar_share_source` / `battery_share_source` | entity id or `null` | — | Per-device override of the solar/battery split; `null` opts out. Setting one spelling on the device replaces the other spelling inherited from the defaults |
 | `live_update_interval` | duration | — | Per-device override of the default |
 | `periods` | list | — | Per-device override of the default period set |
+| `instant_periods` | list | — | Per-device override; when unset the device falls back to its own `periods` |
+| `cost_precision` | integer 0–10 | — | Per-device override of the default |
 
 ## Running detection (`running:`)
 

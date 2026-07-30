@@ -16,6 +16,10 @@ sensor.<p>_<group>_<metric>_<period>
 
 A device named `washing_machine` with the default suffix produces `sensor.washing_machine_em_…`.
 
+The `<period>` slot and `lifetime` are **alternatives in the same position**, not something you append: `…_energy_from_self_lifetime` and `…_energy_from_self_daily` are siblings. So the shorthand `<base>_from_self_lifetime` (+ `_<period>`) used in the tables below means *replace* `_lifetime` with the period, never `…_lifetime_daily`.
+
+Supported periods: `hourly`, `daily`, `weekly`, `monthly`, `bimonthly`, `quarterly`, `yearly` — configured per device via `periods:`, defaulting to `[daily, monthly, yearly]`. Anything else is skipped with a warning.
+
 ## Markers
 
 Every entity below carries two markers:
@@ -57,9 +61,11 @@ Read this table once and it applies to all three groups: substitute `<base>` wit
 
 Fully configured, each group is **36 entities** with `[daily, monthly, yearly]`.
 
-## Power — instantaneous
+**Decimals —** kWh and W rows get their precision from Home Assistant, which derives one from the device class. € and % have no device class default, so the integration supplies one: € shows 2 decimals (configurable via [`cost_precision:`](configuration.md#shared-defaults-defaults)), % shows 1 (fixed). In every case this is display only — the stored state and the long-term statistics keep their full precision, and a precision you set by hand on a single entity overrides it.
 
-Total group only: these read the raw power sensor, which no gate applies to.
+## Power
+
+Watts, read straight from the power sensor. Total group only: no gate applies to them.
 
 | Entity | Unit | Unlocked by | Description |
 | --- | --- | --- | --- |
@@ -68,8 +74,28 @@ Total group only: these read the raw power sensor, which no gate applies to.
 | `sensor.<p>_power_from_grid` 💤 | W | [L3](levels/03-self-sufficiency.md) | Instantaneous grid share — the exact remainder |
 | `sensor.<p>_power_from_solar` 💤 | W | [L4](levels/04-solar-battery.md) | Watts straight from the panels (`power × ss% × share%`) |
 | `sensor.<p>_power_from_battery` 💤 | W | [L4](levels/04-solar-battery.md) | Battery-discharge watts — the complement inside self |
-| `sensor.<p>_energy_cost_instant_hourly` 💤 | €/h | [L2](levels/02-cost.md) | Projected cost rate if the current draw held for an hour |
-| `sensor.<p>_energy_cost_instant_daily` / `_monthly` / `_yearly` 💤 | €/d, €/m, €/y | [L2](levels/02-cost.md) | The same projection over a day / 30-day month / year |
+
+## Instantaneous cost projections
+
+Euro per unit of time, not euro spent: *"if the draw held at what it is right now, it would cost this much per hour / day / month / year"*. Derived from the power sensors above and the price, so — like them — total group only.
+
+| Entity | Unit | Unlocked by | Description |
+| --- | --- | --- | --- |
+| `sensor.<p>_energy_cost_instant_<period>` 💤 | € / time | [L2](levels/02-cost.md) | The **whole** draw priced at the import tariff, self-production ignored |
+| `sensor.<p>_energy_cost_instant_from_grid_<period>` 💤 | € / time | [L2](levels/02-cost.md)+[L3](levels/03-self-sufficiency.md) | The same over `power_from_grid` instead: what the draw is *actually* costing, once self-production is netted off |
+
+**Which `<period>` variants exist** follows the device's `periods:`, so the projections and the period meters line up by default. `instant_periods:` overrides that independently, and `[]` switches the projections off — see [Configuration](configuration.md#defaults). Each variant is the same €/h rate under a different multiplier, so they differ in nothing but the time unit:
+
+| Period | `hourly` | `daily` | `weekly` | `monthly` | `bimonthly` | `quarterly` | `yearly` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Unit | €/h | €/d | €/w | €/m | €/2m | €/q | €/y |
+| Factor | ×1 | ×24 | ×168 | ×720 | ×1440 | ×2160 | ×8760 |
+
+Month and quarter use nominal 30 and 90-day lengths.
+
+The two families answer different questions: **without** `_from_grid` you get the cost of the appliance's consumption as such, **with** it the cost of what you are importing to run it. On a device running entirely on solar the first is non-zero and the second is 0. They mirror `<base>_cost_lifetime` and `<base>_from_grid_cost_lifetime` at the cumulative level; the qualifier trails `cost_instant` rather than sitting in the canonical `_from_grid_` slot so that both families sort together in the UI.
+
+Despite ending in a period name these are **not** period meters — they are instantaneous projections, 💤 rather than 🚫. See [Recorder Setup](recorder.md).
 
 ## Gatekeepers and status
 
@@ -86,12 +112,18 @@ All from [Level 7](levels/07-cycles.md). Boundary and engine:
 
 | Entity | Unit | Description |
 | --- | --- | --- |
-| `sensor.<p>_cycle_start_snapshot` 💤 | timestamp | When the current/last cycle opened; attributes hold each metric's baseline (`initial_energy`, …) |
-| `sensor.<p>_cycle_stop_snapshot` 💤 | timestamp | When the last cycle closed; attributes hold the final values |
-| `sensor.<p>_cycle_validation_status` 📈 | — | Verdict on the last closed cycle: `valid`, `too_short`, `too_long`, `too_little_energy`, `too_much_energy` |
+| `sensor.<p>_cycle_start_snapshot` 💤 | timestamp | Marker for the cycle **in progress**: when it opened; attributes hold each metric's baseline (`initial_energy`, …) |
+| `sensor.<p>_cycle_stop_snapshot` 💤 | timestamp | Marker for the last close; attributes hold the final values |
+| `sensor.<p>_cycle_completed_start` 📈 | timestamp | When the last **valid** cycle started — frozen until the next valid one closes |
+| `sensor.<p>_cycle_completed_stop` 📈 | timestamp | When it ended — same freeze |
+| `sensor.<p>_cycle_validation_status` 📈 | — | Verdict on the last closed cycle, valid or not: `valid`, `too_short`, `too_long`, `too_little_energy`, `too_much_energy` |
 | `sensor.<p>_cycles_count_lifetime` 💤 ↺ (+ `_<period>` 🚫) | cycles | Valid completed runs — also the engine driving every cycle sensor |
 
-Per-metric analytics — each metric has four views (**completed** 📈 last run · **live** 💤 in progress · **lifetime** 💤 ↺ all valid runs · **mean** 📈 per valid run):
+The snapshots and the completed pair are **not** interchangeable: the snapshots follow the cycle in progress, so mid-run the start belongs to the running cycle and the stop to the previous one (`start > stop` is how a cycle left open by a restart is detected). Use `_cycle_completed_start` / `_cycle_completed_stop` to describe the last run — see [Level 7](levels/07-cycles.md#what-you-get).
+
+Note the two different populations: the snapshots and `_cycle_validation_status` move on **every** close, while the whole `_cycle_completed_*` family and the counters move only on a **valid** one. A discarded run is therefore visible in the validation status without disturbing any measured value.
+
+Per-metric analytics — each metric has four views (**completed** 📈 last valid run · **live** 💤 in progress · **lifetime** 💤 ↺ all valid runs · **mean** 📈 per valid run):
 
 | Metric | Unlocked by | Unit | Completed | Live | Lifetime | Mean |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -129,11 +161,11 @@ Entity count for a fully-configured device with the default `[daily, monthly, ye
 
 | Block | Entities | Level |
 | --- | --- | --- |
-| Power + total energy group | 45 | [1](levels/01-energy.md)–[4](levels/04-solar-battery.md) |
+| Power + total energy group | 47 | [1](levels/01-energy.md)–[4](levels/04-solar-battery.md) |
 | Running signal + running energy group | 37 | [5](levels/05-running.md) |
 | Standby gatekeeper, duration + standby energy group | 38 | [6](levels/06-standby.md) |
-| Cycle analytics | 52 | [7](levels/07-cycles.md) |
+| Cycle analytics | 54 | [7](levels/07-cycles.md) |
 | Status label | 1 | [5](levels/05-running.md)/[6](levels/06-standby.md) |
-| **Total** | **173** | |
+| **Total** | **177** | |
 
-86 of those are fixed and 29 scale with the number of configured periods.
+84 of those are fixed and 31 scale with the number of configured periods.

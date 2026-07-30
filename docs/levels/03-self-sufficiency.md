@@ -64,8 +64,9 @@ template:
 | --- | --- | --- |
 | `sensor.<p>_energy_from_grid_savings_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | What self-production saved you: the `from_self` share priced |
 | `sensor.<p>_energy_from_grid_cost_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | What the grid imports actually cost: the `from_grid` share priced |
+| `sensor.<p>_energy_cost_instant_from_grid_<period>` 💤 | € / time | The [Level 2](02-cost.md) projection re-based on `power_from_grid`: what the current draw is *actually* costing you, self-production netted off. Runs entirely on solar → 0 |
 
-**Inventory —** with `[daily, monthly, yearly]` and a price already configured: **22 new entities** (35 cumulative). Without a price, 14 of them (the two monetary rows drop out).
+**Inventory —** with `[daily, monthly, yearly]` and a price already configured: **25 new entities** (37 cumulative). Without a price, 14 of them (the two monetary rows and the `_cost_instant_from_grid_*` projections drop out).
 
 ```
 sensor.<p>_power_from_self / _power_from_grid

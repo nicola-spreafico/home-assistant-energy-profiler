@@ -7,9 +7,9 @@ Replaces the whole ``003_cycles`` folder:
   (when the families exist) cost, from_self, from_grid, savings, grid_cost;
 - count and duration, exposed per-period via Lean meters;
 - ``cycle_completed`` / ``cycle_discarded`` events for user automations.
-
-Not ported (niche): ``cycle_completed_start/stop`` — covered by the snapshot
-timestamps.
+- ``cycle_completed_start/stop``: the frozen boundaries of the last valid cycle,
+  which the start/stop snapshots cannot stand in for (they track the cycle in
+  progress, so mid-run they are one cycle apart).
 """
 
 from ..const import (
@@ -28,6 +28,9 @@ from ..const import (
     CONF_SELF_SUFFICIENCY_SOURCE,
     CONF_SOLAR_SHARE_SOURCE,
     CONF_BATTERY_SHARE_SOURCE,
+    CONF_COST_PRECISION,
+    DEFAULT_COST_PRECISION,
+    DEFAULT_PERCENTAGE_PRECISION,
 )
 
 
@@ -46,6 +49,7 @@ def build(hass, device):
     from homeassistant.components.sensor import SensorDeviceClass
 
     from ..cycles_tracker import (
+        CompletedTimestampSensor,
         CompletedValueSensor,
         CycleLiveDurationSensor,
         CycleLiveSensor,
@@ -71,28 +75,38 @@ def build(hass, device):
 
     price = device.get(CONF_ENERGY_PRICE)
     has_self = device.get(CONF_SELF_SUFFICIENCY_SOURCE)
+    cost_precision = device.get(CONF_COST_PRECISION, DEFAULT_COST_PRECISION)
 
     # Snapshots + validation status.
     start_snap = CycleSnapshotSensor(hass, slug=f"{prefix}_cycle_start_snapshot", icon="mdi:timer-marker-outline")
     stop_snap = CycleSnapshotSensor(hass, slug=f"{prefix}_cycle_stop_snapshot", icon="mdi:timer-marker-outline")
+    # The snapshots above move with the cycle in progress; these two freeze the
+    # boundaries of the last valid one, so the pair is always self-consistent.
+    completed_start = CompletedTimestampSensor(hass, slug=f"{prefix}_cycle_completed_start", icon="mdi:play-circle-outline")
+    completed_stop = CompletedTimestampSensor(hass, slug=f"{prefix}_cycle_completed_stop", icon="mdi:stop-circle-outline")
     validation = CycleValidationSensor(hass, slug=f"{prefix}_cycle_validation_status")
-    entities = [start_snap, stop_snap, validation]
+    entities = [start_snap, stop_snap, completed_start, completed_stop, validation]
 
     # Metrics: (name, source lifetime, completed, mean, accumulator, live) — energy
     # always, the rest gated on the cost / self-sufficiency families existing.
     metrics: list = []
 
     def metric(name, source_slug, completed_slug, mean_slug, acc_slug, live_slug, unit, dc, icon):
-        completed = CompletedValueSensor(hass, slug=completed_slug, unit=unit, device_class=dc, icon=icon)
-        acc = CycleSumAccumulatorSensor(hass, slug=acc_slug, unit=unit, device_class=dc, icon=icon)
+        # The € metrics need an explicit precision (HA has no default for the
+        # monetary device class); kWh and durations get theirs from their own.
+        prec = cost_precision if dc is MONEY else None
+        completed = CompletedValueSensor(hass, slug=completed_slug, unit=unit, device_class=dc, icon=icon, display_precision=prec)
+        acc = CycleSumAccumulatorSensor(hass, slug=acc_slug, unit=unit, device_class=dc, icon=icon, display_precision=prec)
         mean = MeanSensor(
             hass, slug=mean_slug, total_entity=acc.entity_id,
             count_entity=f"sensor.{count_lifetime}", unit=unit, device_class=dc, icon=icon,
+            display_precision=prec,
         )
         live = CycleLiveSensor(
             hass, slug=live_slug, source_entity=f"sensor.{source_slug}",
             snapshot_entity=start_snap.entity_id, initial_attr=f"initial_{name}",
             running_entity=running, unit=unit, device_class=dc, icon=icon,
+            display_precision=prec,
         )
         metrics.append((name, f"sensor.{source_slug}", completed, acc))
         entities.extend([completed, acc, mean, live])
@@ -138,7 +152,7 @@ def build(hass, device):
     # Self-sufficiency % (completed + mean over cycles + live), when applicable.
     completed_ss = None
     if has_self:
-        completed_ss = CompletedValueSensor(hass, slug=f"{prefix}_cycle_completed_self_sufficiency", unit="%", device_class=None, icon="mdi:solar-power-variant")
+        completed_ss = CompletedValueSensor(hass, slug=f"{prefix}_cycle_completed_self_sufficiency", unit="%", device_class=None, icon="mdi:solar-power-variant", display_precision=DEFAULT_PERCENTAGE_PRECISION)
         entities += [
             completed_ss,
             SelfSufficiencyRatioSensor(
@@ -180,6 +194,8 @@ def build(hass, device):
         completed_duration=completed_duration,
         start_snapshot=start_snap,
         stop_snapshot=stop_snap,
+        completed_start=completed_start,
+        completed_stop=completed_stop,
         validation=validation,
         limits=tracking.get(CONF_LIMITS) or {},
         on_delay=run.get(CONF_ON_DELAY),
