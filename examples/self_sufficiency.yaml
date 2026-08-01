@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Example: self-sufficiency split (solar vs. grid)
+# Levels 3-4 — see docs/levels/03-self-sufficiency.md and docs/levels/04-solar-battery.md
+# ─────────────────────────────────────────────────────────────────────────────
+# Adds a solar/grid breakdown on top of the basic consumption. A house-wide
+# self-sufficiency percentage entity (0–100 %, e.g. how much of the current draw
+# is covered by PV) is used to split each energy increment into a self-produced
+# and a grid-imported portion.
+#
+# Enabled by providing `self_sufficiency_source`. On top of the energy + cost
+# families it creates (prefix = <name> + name_suffix):
+#   sensor.heat_pump_em_energy_from_self_lifetime      (kWh, solar-covered)
+#   sensor.heat_pump_em_energy_from_self_{daily,monthly,yearly}
+#   sensor.heat_pump_em_energy_from_grid_lifetime      (kWh, grid-imported)
+#   sensor.heat_pump_em_energy_from_grid_{daily,monthly,yearly}
+#   sensor.heat_pump_em_energy_from_grid_savings_*     (€ saved via PV)      [needs price]
+#   sensor.heat_pump_em_energy_from_grid_cost_*        (€ paid to grid)      [needs price]
+#   sensor.heat_pump_em_energy_self_sufficiency_{daily,monthly,yearly}  (%, live)
+# ─────────────────────────────────────────────────────────────────────────────
+
+energy_profiler:
+  defaults:
+    energy_price: sensor.energy_price_purchase
+    # Instantaneous house self-sufficiency %, shared by all devices:
+    self_sufficiency_source: sensor.home_self_sufficiency_score
+    name_suffix: _em
+
+  devices:
+    - name: heat_pump
+      power: sensor.heat_pump_power
+      energy: sensor.heat_pump_energy
+
+    # A device may point at a different self-sufficiency source than the default
+    # (e.g. a sub-plant with its own PV metering).
+    - name: workshop
+      power: sensor.workshop_power
+      energy: sensor.workshop_energy
+      self_sufficiency_source: sensor.workshop_self_sufficiency_score

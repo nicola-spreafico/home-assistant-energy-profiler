@@ -1,5 +1,4 @@
 {
-  "name": "Energy Monitor",
-  "homeassistant": "2024.1.0",
-  "render_readme": true
+  "name": "Energy Profiler",
+  "homeassistant": "2024.1.0"
 }

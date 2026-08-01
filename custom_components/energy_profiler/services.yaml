@@ -1,0 +1,11 @@
+reset:
+  name: Reset
+  description: Zero a resettable entity (lifetime accumulators, cycle counters, peak power). No-op on entities with nothing to reset.
+  fields:
+    entity_id:
+      name: Entity
+      description: The entity to reset.
+      required: true
+      selector:
+        entity:
+          integration: energy_profiler

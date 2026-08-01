@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Example: full fleet configuration
+# All levels 1-7 — see docs/levels/01-energy.md onwards
+# ─────────────────────────────────────────────────────────────────────────────
+# Shows shared `defaults` plus a mix of devices exercising every option. Each
+# device inherits the defaults and overrides only what it needs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+energy_profiler:
+  defaults:
+    energy_price: sensor.energy_price_purchase
+    self_sufficiency_source: sensor.home_self_sufficiency_score
+    name_suffix: _em
+    # Throttle live LTS updates fleet-wide (fewer upserts/hour than the 5-min
+    # default; period boundaries are still written exactly).
+    live_update_interval: "00:15:00"
+    # Which meter periods every device gets, unless it overrides `periods`.
+    periods: [daily, monthly, yearly]
+
+  devices:
+    # 1) Plain consumption + cost, no solar split, no run detection.
+    - name: home_office
+      power: sensor.home_office_power
+      energy: sensor.home_office_energy
+      self_sufficiency_source: null   # opt out of the shared default
+
+    # 2) Full solar/grid breakdown (inherits the shared self_sufficiency_source).
+    - name: heat_pump
+      power: sensor.heat_pump_power
+      energy: sensor.heat_pump_energy
+
+    # 3) Cycle-tracked appliance with a custom, finer period set.
+    - name: washing_machine
+      power: sensor.washing_machine_power
+      energy: sensor.washing_machine_energy
+      periods: [daily, weekly, monthly, yearly]
+      running:
+        trigger: power
+        on_above: 5
+        on_delay: "00:00:30"
+        off_below: 2
+        off_delay: "00:02:00"
+      cycle_tracking:
+        limits:
+          min_duration: "00:05:00"
+          min_energy: 0.05
+
+    # 4) Running signal + standby, but no cycle analytics: the running sensor
+    #    only exists to define standby by difference.
+    - name: tv
+      power: sensor.tv_power
+      energy: sensor.tv_energy
+      running:
+        trigger: power
+        on_above: 15
+        off_below: 10
+      standby: true
+
+    # 5) Standalone standby (vampire range), no running detection at all.
+    - name: stereo
+      power: sensor.stereo_power
+      energy: sensor.stereo_energy
+      standby:
+        trigger: power
+        on_below: 8
+        off_above: 12

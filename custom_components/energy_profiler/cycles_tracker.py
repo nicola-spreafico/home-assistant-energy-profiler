@@ -1,0 +1,847 @@
+"""Cycle tracking: turn ``_running`` edges into countable, measurable cycles.
+
+Reincarnates the cumulative parts of ``003_cycles`` (counter, durations, completed
+snapshots). A cycle opens on ``_running`` off->on (record start time + start energy)
+and closes on on->off, at which point:
+
+- the total cycle **count** ticks +1 (a ``total_increasing`` source, so the Lean
+  cycle meters over it report cycles-per-period);
+- the cycle's **duration** is added to a running total (same, duration-per-period);
+- the **last completed** cycle's energy and duration are published as snapshots.
+
+Means (energy/duration per cycle over a period) and the completion notification are
+derived/event concerns, left for a later pass.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal, InvalidOperation
+import logging
+
+from homeassistant.components.sensor import (
+    RestoreSensor,
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import Event, HomeAssistant, callback
+from datetime import timedelta
+
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_interval,
+)
+from homeassistant.util import dt as dt_util
+
+_LOGGER = logging.getLogger(__name__)
+
+_INVALID = (None, STATE_UNAVAILABLE, STATE_UNKNOWN)
+
+# Fired on each completed cycle so users can automate notifications themselves
+# (the HA-idiomatic alternative to the old package's built-in notify action).
+EVENT_CYCLE_COMPLETED = "energy_profiler_cycle_completed"
+# Fired instead when a closed cycle fails the configured min/max limits.
+EVENT_CYCLE_DISCARDED = "energy_profiler_cycle_discarded"
+
+
+def _to_float(value) -> float | None:
+    if value in _INVALID:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+class _RestoreDecimal(RestoreSensor):
+    """A RestoreSensor holding a Decimal total, restored across restarts."""
+
+    _attr_should_poll = False
+
+    def __init__(self, hass: HomeAssistant, *, slug: str, icon: str, name: str | None = None) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._value = Decimal(0)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and last.native_value is not None:
+            try:
+                self._value = Decimal(str(last.native_value))
+            except (InvalidOperation, ValueError):
+                self._value = Decimal(0)
+
+    @property
+    def native_value(self) -> Decimal:
+        return self._value
+
+    async def async_reset(self) -> None:
+        """Zero the accumulated value (reset entity service)."""
+        self._value = Decimal(0)
+        self.async_write_ha_state()
+
+
+class DurationAccumulatorSensor(_RestoreDecimal):
+    """Total run time across all completed cycles (seconds), fed by the tracker."""
+
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = "s"
+
+    @callback
+    def add(self, seconds: Decimal) -> None:
+        self._value += seconds
+        self.async_write_ha_state()
+
+
+class CycleEnergyAccumulatorSensor(_RestoreDecimal):
+    """Total energy consumed across all completed cycles (kWh), fed by the tracker.
+
+    Only used to derive the per-cycle energy mean; not exposed per-period (the old
+    generator tracked cycle energy only through the mean, not as a period meter).
+    """
+
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = "kWh"
+
+    @callback
+    def add(self, kwh: Decimal) -> None:
+        self._value += kwh
+        self.async_write_ha_state()
+
+
+class CycleSumAccumulatorSensor(_RestoreDecimal):
+    """Total of a per-cycle quantity (e.g. cost €, from_self kWh) over all cycles.
+
+    Fed by the tracker with the per-cycle delta of a lifetime source; used to derive
+    the corresponding per-cycle mean. state_class TOTAL (not total_increasing) so it
+    is valid for monetary device classes too.
+    """
+
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        slug: str,
+        unit: str,
+        device_class: SensorDeviceClass | None,
+        icon: str,
+        name: str | None = None,
+        display_precision: int | None = None,
+    ) -> None:
+        super().__init__(hass, slug=slug, icon=icon, name=name)
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = device_class
+        self._attr_suggested_display_precision = display_precision
+
+    @callback
+    def add(self, delta: Decimal) -> None:
+        self._value += delta
+        self.async_write_ha_state()
+
+
+class MeanSensor(SensorEntity):
+    """Per-completed-cycle mean: ``total / count`` (None until the first cycle)."""
+
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        slug: str,
+        total_entity: str,
+        count_entity: str,
+        unit: str,
+        device_class: SensorDeviceClass | None,
+        icon: str,
+        name: str | None = None,
+        display_precision: int | None = None,
+    ) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = device_class
+        self._attr_suggested_display_precision = display_precision
+        self._total_entity = total_entity
+        self._count_entity = count_entity
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, [self._total_entity, self._count_entity], self._on_change
+            )
+        )
+
+    @callback
+    def _on_change(self, event: Event) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        total = _to_float((s := self.hass.states.get(self._total_entity)) and s.state)
+        count = _to_float((s := self.hass.states.get(self._count_entity)) and s.state)
+        if total is None or count is None or count <= 0:
+            self._attr_available = False
+            self._attr_native_value = None
+            return
+        self._attr_available = True
+        self._attr_native_value = round(total / count, 3)
+
+
+class ScaledRatioSensor(SensorEntity):
+    """``numerator / denominator * scale`` (e.g. cost per hour: €total / s * 3600)."""
+
+    _attr_should_poll = False
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self, hass: HomeAssistant, *, slug: str, numerator: str, denominator: str,
+        scale: float, unit: str, icon: str, name: str | None = None,
+    ) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._attr_native_unit_of_measurement = unit
+        self._num = numerator
+        self._den = denominator
+        self._scale = scale
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, [self._num, self._den], self._on_change)
+        )
+
+    @callback
+    def _on_change(self, event: Event) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        num = _to_float((s := self.hass.states.get(self._num)) and s.state)
+        den = _to_float((s := self.hass.states.get(self._den)) and s.state)
+        if num is None or den is None or den <= 0:
+            self._attr_available = False
+            self._attr_native_value = None
+            return
+        self._attr_available = True
+        self._attr_native_value = round(num / den * self._scale, 3)
+
+
+class HumanDurationSensor(SensorEntity):
+    """A human-readable formatting of a seconds-valued source (``2h 05m``)."""
+
+    _attr_should_poll = False
+    _attr_icon = "mdi:timer-outline"
+
+    def __init__(
+        self, hass: HomeAssistant, *, slug: str, seconds_source: str, name: str | None = None,
+    ) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._source = seconds_source
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, [self._source], self._on_change)
+        )
+
+    @callback
+    def _on_change(self, event: Event) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        secs = _to_float((s := self.hass.states.get(self._source)) and s.state)
+        if secs is None:
+            self._attr_native_value = None
+            return
+        total = int(secs)
+        h, rem = divmod(total, 3600)
+        m, s = divmod(rem, 60)
+        self._attr_native_value = f"{h}h {m:02d}m" if h else f"{m}m {s:02d}s"
+
+
+class CompletedValueSensor(_RestoreDecimal):
+    """The last **valid** cycle's value (energy or duration), updated on cycle end.
+
+    Written only when the closing cycle passes the limits, in step with the counters:
+    a discarded run leaves the previous one's values frozen.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        slug: str,
+        unit: str,
+        device_class: SensorDeviceClass | None,
+        icon: str,
+        name: str | None = None,
+        display_precision: int | None = None,
+    ) -> None:
+        super().__init__(hass, slug=slug, icon=icon, name=name)
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = device_class
+        # None = let the device class decide (or show the raw state when, like the
+        # percentages, there is no device class to decide for it).
+        self._attr_suggested_display_precision = display_precision
+
+    @callback
+    def set(self, value: Decimal) -> None:
+        self._value = value
+        self.async_write_ha_state()
+
+
+class CompletedTimestampSensor(RestoreSensor):
+    """A boundary of the last valid cycle, frozen until the next valid one closes.
+
+    The start/stop snapshot pair cannot answer "when did the last cycle run?". The
+    start snapshot is overwritten the instant a new cycle opens, and ``_close_cycle``
+    never clears it, because ``start > stop`` is exactly what marks a cycle still
+    open (see ``CycleTrackerSensor._async_resume_open_cycle``). While a cycle runs
+    the pair is therefore one cycle apart: the start describes the *running* cycle,
+    the stop the *previous* one — read together they show a cycle that started after
+    it ended.
+
+    These two sensors are written together in ``_close_cycle``, only for a cycle that
+    passes the limits, and never move until the next valid close — so they always
+    describe the same run as the rest of the ``completed_*`` family. They reincarnate
+    ``cycle_completed_start`` / ``cycle_completed_stop`` from ``cycles_005``, which
+    existed for this very reason.
+
+    Restored across restarts, like the rest of the ``completed_*`` family.
+    """
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, hass: HomeAssistant, *, slug: str, icon: str, name: str | None = None) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is None or last.state in _INVALID:
+            return
+        self._attr_native_value = dt_util.parse_datetime(last.state)
+
+    @callback
+    def set(self, when) -> None:
+        self._attr_native_value = when
+        self.async_write_ha_state()
+
+
+class CycleSnapshotSensor(RestoreSensor):
+    """Timestamp of a cycle boundary, carrying the lifetimes at that instant as attrs.
+
+    Reincarnates cycle_start_snapshot / cycle_stop_snapshot (cycles_002): the start
+    snapshot exposes ``initial_*`` attributes, the stop snapshot ``final_*`` — read
+    by the live and standby logic to bound a cycle.
+
+    These are markers for the cycle **in progress**, not a description of the last
+    completed one: the two are one cycle apart while a cycle runs. Use
+    ``CompletedTimestampSensor`` for the frozen boundaries of the last valid cycle.
+
+    Restored across restarts, because the pair of snapshots is the only record of
+    whether a cycle was left open: the tracker compares them to decide whether to
+    resume one (see ``CycleTrackerSensor._async_resume_open_cycle``).
+    """
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, hass: HomeAssistant, *, slug: str, icon: str, name: str | None = None) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._attr_native_value = None
+        self._attr_extra_state_attributes = {}
+        self._restored = False
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self.async_ensure_restored()
+
+    async def async_ensure_restored(self) -> None:
+        """Restore the boundary timestamp and its baselines, exactly once.
+
+        Idempotent, and safe to call from the tracker before this entity has been
+        added: the restore cache only needs ``hass`` and ``entity_id``, both set in
+        ``__init__``. That keeps the resume independent of the order entities happen
+        to be added in.
+        """
+        if self._restored:
+            return
+        self._restored = True
+
+        last = await self.async_get_last_state()
+        if last is None or last.state in _INVALID:
+            return
+        if (when := dt_util.parse_datetime(last.state)) is None:
+            return
+
+        self._attr_native_value = when
+        # Only the cycle baselines: Home Assistant's own attributes (friendly_name,
+        # device_class, icon, ...) must not be resurrected as snapshot data.
+        self._attr_extra_state_attributes = {
+            key: value
+            for key, value in last.attributes.items()
+            if key.startswith(("initial_", "final_"))
+        }
+
+    @callback
+    def set_snapshot(self, when, attributes: dict) -> None:
+        # A live boundary supersedes whatever was stored: mark the restore done so
+        # a later ensure_restored() can never overwrite it with the old snapshot.
+        self._restored = True
+        self._attr_native_value = when
+        self._attr_extra_state_attributes = attributes
+        self.async_write_ha_state()
+
+
+class CycleValidationSensor(RestoreSensor):
+    """Whether the last completed cycle passed the configured min/max limits.
+
+    Restored across restarts, so the outcome of the last cycle isn't lost when
+    Home Assistant reboots between two cycles.
+    """
+
+    _attr_should_poll = False
+    _attr_icon = "mdi:check-decagram"
+
+    def __init__(self, hass: HomeAssistant, *, slug: str, name: str | None = None) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and last.native_value is not None:
+            self._attr_native_value = last.native_value
+
+    @callback
+    def set(self, status: str) -> None:
+        self._attr_native_value = status
+        self.async_write_ha_state()
+
+
+class CycleLiveSensor(SensorEntity):
+    """During a running cycle: ``current(source) - initial(start snapshot)``, else 0."""
+
+    _attr_should_poll = False
+
+    def __init__(
+        self, hass: HomeAssistant, *, slug: str, source_entity: str, snapshot_entity: str,
+        initial_attr: str, running_entity: str, unit: str,
+        device_class: SensorDeviceClass | None, icon: str, name: str | None = None,
+        display_precision: int | None = None,
+    ) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = device_class
+        self._attr_suggested_display_precision = display_precision
+        self._source = source_entity
+        self._snapshot = snapshot_entity
+        self._initial_attr = initial_attr
+        self._running = running_entity
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, [self._source, self._snapshot, self._running], self._on_change
+            )
+        )
+
+    @callback
+    def _on_change(self, event: Event) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        if not self.hass.states.is_state(self._running, STATE_ON):
+            self._attr_native_value = 0.0
+            return
+        current = _to_float((s := self.hass.states.get(self._source)) and s.state)
+        snap = self.hass.states.get(self._snapshot)
+        initial = _to_float(snap and snap.attributes.get(self._initial_attr))
+        self._attr_native_value = (
+            round(max(0.0, current - initial), 6)
+            if current is not None and initial is not None
+            else None
+        )
+
+
+class CycleLiveDurationSensor(SensorEntity):
+    """Elapsed time of the current running cycle (seconds); 0 when idle."""
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "s"
+
+    def __init__(
+        self, hass: HomeAssistant, *, slug: str, start_snapshot: str, running_entity: str,
+        icon: str = "mdi:timer-play-outline", name: str | None = None,
+    ) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._attr_icon = icon
+        self._snapshot = start_snapshot
+        self._running = running_entity
+        self._attr_native_value = 0.0
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, [self._running, self._snapshot], self._on_change
+            )
+        )
+        # Tick while running so the elapsed time advances without other events.
+        self.async_on_remove(
+            async_track_time_interval(self.hass, self._tick, timedelta(seconds=10))
+        )
+
+    @callback
+    def _on_change(self, event: Event) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _tick(self, _now) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        if not self.hass.states.is_state(self._running, STATE_ON):
+            self._attr_native_value = 0.0
+            return
+        snap = self.hass.states.get(self._snapshot)
+        start = dt_util.parse_datetime(snap.state) if snap else None
+        self._attr_native_value = (
+            round(max(0.0, (dt_util.utcnow() - start).total_seconds()), 1) if start else 0.0
+        )
+
+
+class StandbyDurationSensor(SensorEntity):
+    """Time spent in the current standby stretch (s); 0 while not in standby.
+
+    Reincarnates ``004_standby/standby_001_[live]``, gated on the ``_standby``
+    gatekeeper (whatever flavor the device configured).
+    """
+
+    _attr_should_poll = False
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "s"
+    _attr_icon = "mdi:power-sleep"
+
+    def __init__(self, hass: HomeAssistant, *, slug: str, standby_entity: str, name: str | None = None) -> None:
+        self.hass = hass
+        self.entity_id = f"sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = name or slug
+        self._standby = standby_entity
+        self._standby_since = None
+        self._attr_native_value = 0.0
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if self.hass.states.is_state(self._standby, STATE_ON):
+            self._standby_since = dt_util.utcnow()
+        self._recalculate()
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, [self._standby], self._on_standby)
+        )
+        self.async_on_remove(
+            async_track_time_interval(self.hass, self._tick, timedelta(seconds=10))
+        )
+
+    @callback
+    def _on_standby(self, event: Event) -> None:
+        new_state = event.data.get("new_state")
+        if new_state is None:
+            return
+        self._standby_since = dt_util.utcnow() if new_state.state == STATE_ON else None
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _tick(self, _now) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        if self._standby_since is None or not self.hass.states.is_state(self._standby, STATE_ON):
+            self._attr_native_value = 0.0
+            return
+        self._attr_native_value = round(max(0.0, (dt_util.utcnow() - self._standby_since).total_seconds()), 1)
+
+
+def _validate(duration_s: float, energy: float | None, limits: dict) -> tuple[bool, str]:
+    """Check a completed cycle against the configured min/max duration/energy limits."""
+    min_d, max_d = limits.get("min_duration"), limits.get("max_duration")
+    min_e, max_e = limits.get("min_energy"), limits.get("max_energy")
+    if min_d is not None and duration_s < min_d.total_seconds():
+        return False, "too_short"
+    if max_d is not None and duration_s > max_d.total_seconds():
+        return False, "too_long"
+    if energy is not None and min_e is not None and energy < min_e:
+        return False, "too_little_energy"
+    if energy is not None and max_e is not None and energy > max_e:
+        return False, "too_much_energy"
+    return True, "valid"
+
+
+class CycleTrackerSensor(_RestoreDecimal):
+    """Counts valid completed cycles and drives every cycle sensor.
+
+    On ``_running`` off->on it opens a cycle (snapshotting each metric's lifetime and
+    the start timestamp); on on->off it closes it: computes each metric's delta and
+    the duration, writes the completed/snapshot/validation sensors, and — if the
+    cycle passes the limits — increments the count and feeds the mean accumulators.
+    Metrics are ``(name, source_entity, completed_sensor, accumulator_or_None)``.
+    """
+
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        slug: str,
+        device_prefix: str,
+        running_entity: str,
+        metrics: list,
+        duration_accumulator: DurationAccumulatorSensor,
+        completed_duration: CompletedValueSensor,
+        start_snapshot: CycleSnapshotSensor,
+        stop_snapshot: CycleSnapshotSensor,
+        completed_start: CompletedTimestampSensor,
+        completed_stop: CompletedTimestampSensor,
+        validation: CycleValidationSensor,
+        limits: dict | None = None,
+        on_delay=None,
+        off_delay=None,
+        completed_self_sufficiency: CompletedValueSensor | None = None,
+        completed_costovertime: CompletedValueSensor | None = None,
+        icon: str = "mdi:counter",
+        name: str | None = None,
+    ) -> None:
+        super().__init__(hass, slug=slug, icon=icon, name=name)
+        self._device_prefix = device_prefix
+        self._running_entity = running_entity
+        self._metrics = metrics  # list of (name, source, completed_sensor, acc|None)
+        self._duration_acc = duration_accumulator
+        self._completed_duration = completed_duration
+        self._start_snapshot = start_snapshot
+        self._stop_snapshot = stop_snapshot
+        self._completed_start = completed_start
+        self._completed_stop = completed_stop
+        self._validation = validation
+        self._limits = limits or {}
+        self._on_delay = on_delay
+        self._off_delay = off_delay
+        self._completed_ss = completed_self_sufficiency
+        self._completed_cot = completed_costovertime
+        self._start_time = None
+        self._start: dict[str, float | None] = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self._async_resume_open_cycle()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass, [self._running_entity], self._on_running_change
+            )
+        )
+
+    async def _async_resume_open_cycle(self) -> None:
+        """Pick a cycle back up when Home Assistant restarted in the middle of it.
+
+        The boundary used to live in memory only, so every restart dropped it: the
+        run could no longer be closed (``_on_running_change`` needs ``_start_time``)
+        and the unknown->on edge a restart produces is deliberately ignored, so it
+        was never reopened either — the whole run was lost.
+
+        A cycle counts as still open when the start snapshot is **newer than the
+        stop** one: ``_close_cycle`` writes the stop and never clears the start, so
+        start > stop is exactly "opened and not yet closed". Restoring both
+        snapshots is therefore enough to tell the two situations apart.
+
+        Nothing is invented here. With no start on record, or with a start that a
+        stop already superseded, the behaviour is exactly what it was before. The
+        device's current state is deliberately *not* consulted: the running binary
+        sensor lives on another platform and may not have been added yet, and a
+        stale start left over from downtime is harmless — the next genuine off->on
+        edge overwrites it through ``_open_cycle``.
+
+        A run that really ended while Home Assistant was down is closed on the next
+        off edge with the gap folded in; that is what ``max_duration`` is there to
+        reject.
+        """
+        await self._start_snapshot.async_ensure_restored()
+        await self._stop_snapshot.async_ensure_restored()
+
+        start_time = self._start_snapshot.native_value
+        if start_time is None:
+            return
+        stop_time = self._stop_snapshot.native_value
+        if stop_time is not None and stop_time >= start_time:
+            return  # the last cycle was closed normally; nothing to resume
+
+        attributes = self._start_snapshot.extra_state_attributes or {}
+        self._start_time = start_time
+        self._start = {
+            name: _to_float(attributes.get(f"initial_{name}"))
+            for name, *_ in self._metrics
+        }
+        _LOGGER.info(
+            "%s: resuming the cycle opened at %s, still open across the restart",
+            self.entity_id,
+            start_time,
+        )
+
+    @callback
+    def _value_of(self, entity_id: str) -> float | None:
+        return _to_float((s := self.hass.states.get(entity_id)) and s.state)
+
+    @callback
+    def _on_running_change(self, event: Event) -> None:
+        new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
+        if new_state is None:
+            return
+        old_off = old_state is not None and old_state.state == STATE_OFF
+        old_on = old_state is not None and old_state.state == STATE_ON
+
+        # Only genuine off<->on transitions open/close a cycle. Ignoring
+        # unknown/unavailable edges avoids opening a spurious cycle at restart
+        # while the device is already running (and the crash of touching the
+        # snapshot before it is registered).
+        if new_state.state == STATE_ON and old_off:
+            self._open_cycle()
+        elif new_state.state == STATE_OFF and old_on and self._start_time is not None:
+            self._close_cycle()
+
+    @callback
+    def _open_cycle(self) -> None:
+        now = dt_util.utcnow()
+        self._start_time = now - self._on_delay if self._on_delay else now
+        self._start = {name: self._value_of(src) for name, src, *_ in self._metrics}
+        self._start_snapshot.set_snapshot(
+            self._start_time, {f"initial_{name}": self._start[name] for name, *_ in self._metrics}
+        )
+
+    @callback
+    def _close_cycle(self) -> None:
+        now = dt_util.utcnow()
+        stop_time = now - self._off_delay if self._off_delay else now
+        start_time = self._start_time
+        duration_s = max(0.0, (stop_time - start_time).total_seconds())
+        self._start_time = None
+
+        deltas: dict[str, float] = {}
+        finals: dict[str, float | None] = {}
+        for name, src, _completed, _acc in self._metrics:
+            cur = self._value_of(src)
+            finals[name] = cur
+            start = self._start.get(name)
+            delta = max(0.0, cur - start) if cur is not None and start is not None else 0.0
+            deltas[name] = delta
+
+        energy = deltas.get("energy")
+        valid, status = _validate(duration_s, energy, self._limits)
+
+        # Written on every close, valid or not. The stop snapshot in particular must
+        # not be gated: a discarded cycle is still *closed*, and leaving start > stop
+        # would make _async_resume_open_cycle reopen it after the next restart.
+        self._stop_snapshot.set_snapshot(stop_time, {f"final_{name}": finals[name] for name in finals})
+        self._validation.set(status)
+
+        if valid:
+            # The completed_* family describes the last *valid* run, in step with the
+            # counters below: a discarded cycle leaves the previous run's values
+            # frozen rather than overwriting them with a run nothing else counted.
+            # (The old cycles_005 package gated this the same way, by triggering off
+            # the counter instead of off the running edge.)
+            self._completed_start.set(start_time)
+            self._completed_stop.set(stop_time)
+            self._completed_duration.set(Decimal(str(duration_s)))
+            if self._completed_ss is not None and energy and "from_self" in deltas:
+                self._completed_ss.set(Decimal(str(round(deltas["from_self"] / energy * 100, 3))))
+            if self._completed_cot is not None and "cost" in deltas and duration_s > 0:
+                self._completed_cot.set(Decimal(str(round(deltas["cost"] / (duration_s / 3600), 3))))
+
+            self._value += Decimal(1)
+            self.async_write_ha_state()
+            self._duration_acc.add(Decimal(str(duration_s)))
+            for name, _src, completed, acc in self._metrics:
+                completed.set(Decimal(str(deltas[name])))
+                if acc is not None:
+                    acc.add(Decimal(str(deltas[name])))
+            event_name = EVENT_CYCLE_COMPLETED
+        else:
+            event_name = EVENT_CYCLE_DISCARDED
+
+        self.hass.bus.async_fire(
+            event_name,
+            {
+                "device": self._device_prefix,
+                "energy_kwh": energy,
+                "duration_s": duration_s,
+                "status": status,
+                "cycle_count": int(self._value),
+            },
+        )

@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Example: standby tracking
+# Level 6 — see docs/levels/06-standby.md
+# ─────────────────────────────────────────────────────────────────────────────
+# Tracks the energy (and its cost) a device draws while in standby — the
+# "vampire" consumption. Everything is gated on binary_sensor.<prefix>_standby,
+# whose flavor is chosen by the `standby` option:
+#   - true                → default: standby == running off (needs a `running:` block)
+#   - trigger: power      → standby while the draw sits in the vampire range
+#   - trigger: template   → any custom condition
+#
+# Per device it adds:
+#   binary_sensor.<prefix>_standby
+#   sensor.<prefix>_standby_duration                                  (s)
+#   sensor.<prefix>_standby_energy_lifetime / _{daily,monthly,yearly} (kWh)
+#   sensor.<prefix>_standby_energy_cost_lifetime / _{...}             (€, if priced)
+# ─────────────────────────────────────────────────────────────────────────────
+
+energy_profiler:
+  defaults:
+    energy_price: sensor.energy_price_purchase
+    name_suffix: _em
+
+  devices:
+    # 1) Default flavor: standby is simply "not running".
+    - name: tv
+      power: sensor.tv_power
+      energy: sensor.tv_energy
+      running:                 # required by the default flavor (standby = not running)
+        trigger: power
+        on_above: 15           # W — above this the TV is "on"
+        off_below: 10          # W — below this it is idling
+      standby: true
+
+    # 2) Power flavor: standby while the draw stays in the vampire range.
+    #    No `running:` block needed. Inverted thresholds vs `running:`: standby starts
+    #    when power drops BELOW on_below, ends when it rises ABOVE off_above.
+    - name: stereo
+      power: sensor.stereo_power
+      energy: sensor.stereo_energy
+      standby:
+        trigger: power
+        on_below: 8            # W — under this it is in standby…
+        on_delay: "00:01:00"   # …after holding there for a minute
+        off_above: 12          # W — above this it is genuinely on
+        off_delay: "00:00:10"
+
+    # 3) Template flavor: any custom condition.
+    - name: console
+      power: sensor.console_power
+      energy: sensor.console_energy
+      standby:
+        trigger: template
+        available: "{{ has_value('media_player.console') }}"
+        state: "{{ is_state('media_player.console', 'standby') }}"
