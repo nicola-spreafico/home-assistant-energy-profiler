@@ -118,13 +118,14 @@ def read_weights(hass: HomeAssistant, flows: dict[str, Any]) -> dict[str, float]
             return None
         # Whatever the load is not covered by grid or battery came from the panels.
         # Measurement noise can push this slightly negative around zero self-use.
+        #
+        # Always keyed as solar, even when no solar *channel* was declared. The
+        # two questions are separate: whether entities may be *named* solar is
+        # about what we can honestly claim (with only load + grid the self share
+        # could be an undeclared battery), while this weight is just the number
+        # the attribution runs on. `channels` decides the naming; this does not.
         derived = load - weights[CONF_FLOW_GRID] - weights.get(CONF_FLOW_BATTERY, 0.0)
-        if CONF_FLOW_SOLAR in flows["channels"]:
-            weights[CONF_FLOW_SOLAR] = max(0.0, derived)
-        elif derived > 0:
-            # Unqualified self share: no channel to name it, but it still has to
-            # weigh against the grid, so it rides as an unnamed self portion.
-            weights["_self"] = derived
+        weights[CONF_FLOW_SOLAR] = max(0.0, derived)
     else:
         solar_eid = flows.get(CONF_FLOW_SOLAR)
         if solar_eid:

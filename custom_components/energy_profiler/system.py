@@ -227,7 +227,13 @@ def build(hass: HomeAssistant, defaults: dict, devices: list) -> list:
         ]
 
     # The derived solar contribution: the one flow nobody else can see.
-    if flows["derives_solar"] and CONF_FLOW_SOLAR in flows["channels"]:
+    #
+    # Deliberately not gated on the solar *channel* existing. Whether the
+    # per-device entities may be named "solar" is a question about what can
+    # honestly be claimed; whether you can see the number the whole attribution
+    # runs on is a question about being able to check it. Only the second one
+    # matters here, and it is answerable whenever the value is derived at all.
+    if flows["derives_solar"]:
         entities.append(
             HouseFlowPowerSensor(
                 hass, slug=f"{SYSTEM_PREFIX}_power_from_solar",
