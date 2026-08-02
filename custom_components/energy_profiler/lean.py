@@ -1,11 +1,16 @@
-"""Bridge to the Lean Utility Meter core (discovery specs).
+"""Bridge to the Lean Utility Meter core (meter specs).
 
 Cumulative/cycle families (energy, cost, from_grid, ...) reuse Lean's cycle
-meters *natively*: instead of subclassing its sensor, this integration hands
-meter **specs** (plain dicts) to the ``lean_utility_meter`` sensor platform via
-discovery (see sensor.py). The meters therefore belong to Lean's platform, and
-Lean's maintenance services (``thin_history``, ``calibrate``, ...) target them
-exactly like YAML-defined meters — no re-registration needed here.
+meters *natively*: instead of subclassing its sensor, this integration builds
+meter **specs** (plain dicts) that Lean's public ``meter_from_spec`` turns into
+real Lean entities (see sensor.py).
+
+Those meters are added on *this* integration's platform rather than dispatched
+to Lean's, because Home Assistant only attaches a device to entities whose
+platform has a config entry — and Lean's discovery platform has none, so meters
+sent there could never appear on a device page. The trade-off is that Lean's
+maintenance services are registered on Lean's platform; sensor.py re-registers
+them here so ``thin_history`` & co. keep working on these meters.
 
 The hard `dependencies` entry in the manifest guarantees ``lean_utility_meter``
 is set up first.

@@ -8,12 +8,25 @@ CONF_DEVICES = "devices"
 
 # Shared defaults (were the generator's "globals")
 CONF_ENERGY_PRICE = "energy_price"                     # energyPriceEntityId
-CONF_SELF_SUFFICIENCY_SOURCE = "self_sufficiency_source"  # selfSufficiencyPercentageEntityId
-# Optional second-level split of the self share into solar vs battery. The user
-# provides ONE of the two (the other is the complement): a % *of the
-# self-consumed energy* coming from solar, or from the battery.
-CONF_SOLAR_SHARE_SOURCE = "solar_share_source"
-CONF_BATTERY_SHARE_SOURCE = "battery_share_source"
+# The house power flows the per-device attribution is derived from. These are
+# *base* readings in W, the ones an inverter/meter integration already exposes —
+# the integration computes the shares itself, so no template is asked of the user.
+CONF_POWER_FLOWS = "power_flows"
+CONF_FLOW_LOAD = "load"                                # total house load (the denominator)
+CONF_FLOW_GRID = "grid"                                # load covered by grid import
+CONF_FLOW_SOLAR = "solar"                              # load covered directly by the panels
+CONF_FLOW_BATTERY = "battery"                          # load covered by battery discharge
+
+# The channels the self share can be made of, in the order they are presented.
+FLOW_CHANNELS = (CONF_FLOW_SOLAR, CONF_FLOW_BATTERY)
+
+# The house-level device every profiled appliance hangs off (via_device). It
+# carries what is true of the whole system rather than of one appliance: the
+# live shares read from the flows, the derived solar contribution, and the
+# declared configuration.
+SYSTEM_DEVICE_ID = "system"
+SYSTEM_DEVICE_NAME = "Energy Profiler (system)"
+SYSTEM_PREFIX = "energy_profiler"
 CONF_NAME_SUFFIX = "name_suffix"                       # entitiesPrefixEnd (default "_em")
 CONF_LIVE_UPDATE_INTERVAL = "live_update_interval"
 CONF_PERIODS = "periods"                               # which lean meter periods to create
@@ -54,8 +67,8 @@ DEFAULT_COST_PRECISION = 2
 DEFAULT_PERCENTAGE_PRECISION = 1
 
 # Feature families. The energy groups (total/running/standby) share one stack
-# builder (families/energy_stack.py); cost and solar-split are sub-blocks of
-# each group, driven by energy_price / self_sufficiency_source.
+# builder (families/energy_stack.py); cost and the grid/solar/battery split are
+# sub-blocks of each group, driven by energy_price / power_flows.
 FAMILY_POWER = "power"
 FAMILY_ENERGY = "energy"
 FAMILY_RUNNING = "running_energy"

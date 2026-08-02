@@ -8,8 +8,8 @@ Everything lives under a single `energy_profiler:` block: one global `defaults` 
 | --- | --- |
 | `power` + `energy` (required) | peak power + the **total energy group** — all-time total, per-period energy meters |
 | `energy_price` | the **cost sub-block** in every energy group (€ accumulators, per-period cost meters) + instant cost rates on the total |
-| `self_sufficiency_source` | the **self/grid split sub-block** in every energy group (power, energy, %), and with a price also savings/grid-cost |
-| `solar_share_source` *or* `battery_share_source` | the **solar/battery split** of the self share (`from_solar` + `from_battery` = `from_self`) in every group and in the cycle metrics |
+| `power_flows:` with `grid` + `load` | the **self/grid split sub-block** in every energy group (power, energy, %), and with a price also savings/grid-cost |
+| `power_flows:` also with `battery` (or `solar`) | the **solar/battery split** of the self share (`from_solar` + `from_battery` = `from_self`) in every group and in the cycle metrics |
 | `running:` block | the running **signal** (`binary_sensor.<prefix>_running`) plus the **running energy group** — the same stack as the total, gated on it |
 | `cycle_tracking:` (needs `running:`) | **cycles** family — per-run analytics: completed/live/mean values, counters, events |
 | `standby:` (bool or trigger block) | the standby **signal** (`binary_sensor.<prefix>_standby`) plus the **standby energy group** — same stack, gated on it |
@@ -31,9 +31,7 @@ Global values inherited by every device that does not override them.
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `energy_price` | entity id | — | Sensor with the current energy purchase price (€/kWh). Enables the **cost** family for all devices |
-| `self_sufficiency_source` | entity id | — | Sensor with the instantaneous home self-sufficiency percentage (0–100): the share of consumption covered by *any* local source. Enables the self/grid split in every energy group |
-| `solar_share_source` | entity id | — | Optional second-level split: the % **of the self-consumed energy** coming directly from solar. Adds `from_solar`/`from_battery` to every group and to the cycle metrics. Mutually exclusive with `battery_share_source` (the other side is the exact complement). See the README for an example of computing this sensor |
-| `battery_share_source` | entity id | — | Same split, expressed as the battery share of self (solar is the complement). Mutually exclusive with `solar_share_source` |
+| `power_flows` | mapping | — | The house flows in W the per-device split is derived from. See [Power flows](#power-flows-power_flows) below |
 | `name_suffix` | string | `_em` | Appended to each device `name` to form the entity prefix (`<name><name_suffix>`); useful to namespace the whole fleet |
 | `live_update_interval` | duration | `00:05:00` | Throttle for the Lean meters' live LTS upserts (period boundaries are always written exactly). Passed through to every meter |
 | `periods` | list | `[daily, monthly, yearly]` | Which per-period meters every device gets: `hourly`, `daily`, `weekly`, `monthly`, `bimonthly`, `quarterly`, `yearly` |
@@ -48,12 +46,70 @@ Global values inherited by every device that does not override them.
 | `power` | entity id | ✔ | The device's instantaneous power sensor (W) |
 | `energy` | entity id | ✔ | The device's cumulative energy sensor (kWh). Resets and sensor swaps are tolerated: the integration accumulates only positive deltas into its own lifetime total |
 | `energy_price` | entity id or `null` | — | Per-device override of the default. Set `null` to opt this device **out** of the cost family even when a default is configured |
-| `self_sufficiency_source` | entity id or `null` | — | Per-device override; `null` opts out of the self/grid split |
-| `solar_share_source` / `battery_share_source` | entity id or `null` | — | Per-device override of the solar/battery split; `null` opts out. Setting one spelling on the device replaces the other spelling inherited from the defaults |
+| `power_flows` | mapping or `null` | — | Per-device override; `null` opts out of the split entirely. Replaced **wholesale**, never merged key by key — a half-inherited block would mix two houses' readings |
 | `live_update_interval` | duration | — | Per-device override of the default |
 | `periods` | list | — | Per-device override of the default period set |
 | `instant_periods` | list | — | Per-device override; when unset the device falls back to its own `periods` |
 | `cost_precision` | integer 0–10 | — | Per-device override of the default |
+
+## Power flows (`power_flows:`)
+
+The base readings the whole per-device split is derived from, in **watts**. The integration never asks for a percentage: it computes the shares from these on every tick, and publishes the percentages back as entities.
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `grid` | ✔ | Power the house is importing from the grid |
+| `load` | one of the two | Total house consumption. The solar contribution is derived from it as the remainder |
+| `solar` | one of the two | Power the panels are delivering **to the load** — not the raw production |
+| `battery` | — | Battery **discharge** power. Declaring it enables the solar/battery channels |
+
+```yaml
+power_flows:
+  load: sensor.house_load_power
+  grid: sensor.grid_import_power
+  battery: sensor.battery_discharge_power
+  # solar: — absent on purpose: derived as load − grid − battery.
+```
+
+The solar contribution is the one you will most likely *not* declare, even though it is the channel Level 4 is named after. That is deliberate: `solar` must be solar-to-load, and almost no inverter publishes it — what it publishes is production, which also charges the battery and feeds the export. Deriving it from `load` gets the right number from readings you actually have, and guarantees the portions sum to the load.
+
+The explicit form, for the rare setup that does expose it:
+
+```yaml
+power_flows:
+  grid: sensor.grid_import_power
+  solar: sensor.solar_to_load_power
+  battery: sensor.battery_discharge_power
+```
+
+### What the numbers must mean
+
+Each flow is a **contribution to the house load**, and the ones you declare must add up to it. That rules out three tempting substitutions:
+
+- **Raw solar production instead of solar-to-load.** Production also charges the battery and feeds the export, so it overstates the solar share exactly when production is highest. This is what `load:` is for: derived from the remainder, the solar contribution cannot be wrong in that way.
+- **Net grid exchange instead of import.** A sensor that goes negative while exporting is fine — negatives are clamped to zero. One that reports import minus export as a single signed number is not: while you export it reads negative, and the split sees zero grid.
+- **Signed battery power read as discharge.** Negative-while-charging is fine (clamped); positive-while-charging would be counted as if the battery were feeding the house.
+
+### Validation
+
+Two shapes are rejected at load time rather than silently resolved, because either would skew every device with no visible symptom:
+
+- `load` **and** `solar` together — over-specified, since `load` exists precisely to derive `solar`. Drop one.
+- `grid` alone, with no `load` and no channel — every device would come out 100% grid-fed.
+
+### What gets built
+
+| Declared | Channels | `from_self` |
+| --- | --- | --- |
+| `load` + `grid` | — | the unqualified self share |
+| `load` + `grid` + `battery` | solar, battery | `from_solar + from_battery` |
+| `grid` + `solar` | solar | `from_solar` |
+| `grid` + `battery` | battery | `from_battery` |
+| `grid` + `solar` + `battery` | solar, battery | `from_solar + from_battery` |
+
+Nothing is created that would only ever read zero: no battery flow means no battery entities. With a single channel, `from_self` and that channel hold the same number and both exist — `from_self` is what the monetary view prices, the channel is the one named for what happened — but the channel *percentage* is not created, since it would duplicate self-sufficiency.
+
+If the flows are unreadable at a given tick, the whole delta is attributed to the grid. A broken sensor can understate your self-production; it can never inflate it, nor the savings computed from it.
 
 ## Running detection (`running:`)
 

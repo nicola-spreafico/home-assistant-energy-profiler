@@ -52,7 +52,7 @@ Point it at a device's power and energy sensors and it builds the whole analytic
 
 - **Energy in three symmetric groups** — **total**, **running-only** and **standby-only**: each group exposes the same block (energy, solar/grid split, cost, savings/grid-cost, self-sufficiency %, per-period meters), so separating useful consumption from "vampire" waste never costs you the solar or cost breakdown
 - **Cost** — € accumulated at the price valid *at the moment of consumption*, projected cost rates (€/h, €/day, …)
-- **Self-sufficiency** — how much of each group's energy came from your own production vs the grid, what it saved you and what the grid imports cost, as instantaneous power, cumulative energy and percentages; optionally split the self share further into **direct solar vs battery discharge** (`from_solar` / `from_battery`) — e.g. how much sun, how much battery and how much grid a washing-machine run actually used
+- **Self-sufficiency** — how much of each group's energy came from your own production vs the grid, what it saved you and what the grid imports cost, as instantaneous power, cumulative energy and percentages; declare a battery flow and the self share splits again into **direct solar vs battery discharge** (`from_solar` / `from_battery`) — e.g. how much sun, how much battery and how much grid a washing-machine run actually used. All of it derived from the house flows in watts: you are never asked to supply a percentage
 - **Run cycles** — detects appliance runs (dishwasher, washing machine, A/C…), validates them against duration/energy limits, and tracks per-run values, means and totals; fires events you can automate on
 - **Device status label** — a ready-made `running`/`standby`/`poweroff` enum for dashboards
 
@@ -82,46 +82,64 @@ energy_profiler:
       energy: sensor.dishwasher_energy
 ```
 
+The configuration stays in YAML, but the result is visible under *Settings → Devices & Services*: one device per appliance, plus a system device carrying the live house shares and the derived solar contribution. See [The UI surface](docs/ui.md).
+
 Then configure the recorder — this part is **not optional**: the period meters write their own long-term statistics, and letting the recorder record them too corrupts the series with duplicate rows. [Recorder Setup](docs/recorder.md) tells you exactly what to include or exclude depending on how your system is set up.
 
 ## The levels
 
-A fully-equipped device exposes **177 entities** — which is a lot to meet all at once. So don't: the integration is built as a ladder, and every rung is useful on its own. Each level asks one question about what you already have, and answers with a specific set of sensors.
+A fully-equipped device exposes **213 entities** — which is a lot to meet all at once. So don't: the integration is built as a ladder, and every rung is useful on its own. Each level asks one question about what you already have, and answers with a specific set of sensors.
 
 | Level | You have… | You get | New | Total |
 | --- | --- | --- | --- | --- |
 | **[1 — Energy](docs/levels/01-energy.md)** | a power and an energy sensor | consumption per period, on a database diet | 5 | 5 |
 | **[2 — Cost](docs/levels/02-cost.md)** | …and an electricity price | € at the tariff of the moment, plus live projections | 7 | 12 |
-| **[3 — Self-sufficiency](docs/levels/03-self-sufficiency.md)** | …and a self-sufficiency % | solar-vs-grid split per device, savings and grid cost | 25 | 37 |
-| **[4 — Solar vs battery](docs/levels/04-solar-battery.md)** | …and a solar-share % | how much was sunshine, how much was the battery | 10 | 47 |
-| **[5 — Running](docs/levels/05-running.md)** | a way to tell "on" from "off" | the whole block again, over running time only | 38 | 85 |
-| **[6 — Standby](docs/levels/06-standby.md)** | a way to spot idle draw | the whole block again, over vampire waste | 38 | 123 |
-| **[7 — Cycles](docs/levels/07-cycles.md)** | appliances that run in cycles | per-run energy, cost and solar share, with events | 54 | 177 |
+| **[3 — Self-sufficiency](docs/levels/03-self-sufficiency.md)** | …and the house grid/load flows | solar-vs-grid split per device, savings and grid cost | 29 | 41 |
+| **[4 — Solar vs battery](docs/levels/04-solar-battery.md)** | …and the battery discharge flow | how much was sunshine, how much was the battery | 18 | 59 |
+| **[5 — Running](docs/levels/05-running.md)** | a way to tell "on" from "off" | the whole block again, over running time only | 50 | 109 |
+| **[6 — Standby](docs/levels/06-standby.md)** | a way to spot idle draw | the whole block again, over vampire waste | 50 | 159 |
+| **[7 — Cycles](docs/levels/07-cycles.md)** | appliances that run in cycles | per-run energy, cost and solar share, with events | 54 | 213 |
 
 Counts assume the default `periods: [daily, monthly, yearly]` and every optional source configured; fewer options mean fewer entities.
 
-**Levels 1–4 ask what you can measure.** Each optional source adds a sub-block: a price brings cost, a self-sufficiency percentage brings the solar/grid split, a solar share splits that again into panels versus battery. They also compose — a price *and* a percentage together unlock savings and grid cost, which neither gives alone.
+**Levels 1–4 ask what you can measure.** Each optional source adds a sub-block: a price brings cost, the house grid and load flows bring the solar/grid split, a battery flow splits that again into panels versus battery. They also compose — a price *and* the flows together unlock savings and grid cost, which neither gives alone.
 
-**Levels 5–7 ask which slice you measure it over.** They add no new kind of sensor: they replicate the block you already built over a gated slice of the consumption. Teach the integration to tell running from idle and you get the same energy, cost and solar breakdown for running time and for standby waste, separately. That multiplication is exactly why the total reaches 177 — and why it is far less to learn than the number suggests.
+**Levels 5–7 ask which slice you measure it over.** They add no new kind of sensor: they replicate the block you already built over a gated slice of the consumption. Teach the integration to tell running from idle and you get the same energy, cost and solar breakdown for running time and for standby waste, separately. That multiplication is exactly why the total reaches 213 — and why it is far less to learn than the number suggests.
 
 Stop at any rung. Level 1 alone is a complete, useful setup.
 
-### The percentage sources
+### The house power flows
 
-Levels 3 and 4 need one or two 0–100 sensors that are yours to provide — the share of consumption covered by local production, and the share of *that* coming straight from the panels. If your inverter integration does not expose them, both derive from the instantaneous power flows with a template sensor; the ready-made templates are in [Level 3](docs/levels/03-self-sufficiency.md#minimum-configuration) and [Level 4](docs/levels/04-solar-battery.md#minimum-configuration).
+Levels 3 and 4 need the flows of your house, in watts — the readings your inverter or energy meter already publishes. You are never asked for a percentage: the shares are computed from these, per tick, and the percentages come back out as sensors.
+
+Declare `grid` plus either `load` (the solar contribution is then derived as the remainder) or an explicit `solar`, and add `battery` if you store energy. What you declare decides what gets built: no battery flow, no battery entities.
+
+```yaml
+power_flows:
+  load: sensor.house_load_power             # total house consumption
+  grid: sensor.grid_import_power            # the part covered by the grid
+  battery: sensor.battery_discharge_power   # optional: enables level 4
+  # solar: — not declared here. It is derived as load − grid − battery, because
+  # solar-to-load is the one reading inverters rarely expose (what they publish
+  # is production, which also feeds the battery and the export). Declare it
+  # explicitly only if you really have it, and then drop `load:` — the two are
+  # mutually exclusive.
+```
+
+Each flow is a **contribution to the load**, not a production figure — `solar` means solar-to-load, never raw panel output. [Level 3](docs/levels/03-self-sufficiency.md#what-the-flows-must-mean) explains why the distinction silently skews the split if you get it wrong.
 
 ### Shared defaults — once for the whole system
 
-The optional sources above are almost always the same for every device, so declare them once. `defaults:` goes in **exactly one** place: it is the system-wide baseline every device inherits. Any key can then be overridden by a single device, or opted out with `null`. Thanks to Home Assistant's package merge, this block can live in its own file while the devices are spread across other packages.
+The flows and the price are almost always the same for every device, so declare them once. `defaults:` goes in **exactly one** place: it is the system-wide baseline every device inherits. Any key can then be overridden by a single device, or opted out with `null`. Thanks to Home Assistant's package merge, this block can live in its own file while the devices are spread across other packages.
 
 ```yaml
 energy_profiler:
   defaults:
-    energy_price: sensor.energy_price_purchase             # level 2: the cost sub-block
-    self_sufficiency_source: sensor.home_self_sufficiency  # level 3: the self/grid split
-    solar_share_source: sensor.home_solar_share_of_self    # level 4: splits self into solar vs battery
-    # battery_share_source: sensor.home_battery_share_of_self  # …or provide the battery share instead
-    #                                                          # (mutually exclusive: one is the complement of the other)
+    energy_price: sensor.energy_price_purchase   # level 2: the cost sub-block
+    power_flows:                                 # levels 3-4: the split
+      load: sensor.house_load_power
+      grid: sensor.grid_import_power
+      battery: sensor.battery_discharge_power
     name_suffix: _em                   # entity prefix = <name> + this suffix
     live_update_interval: "00:15:00"   # throttle for the meters' live LTS upserts
     periods: [daily, monthly, yearly]  # meter windows: hourly..yearly
@@ -133,9 +151,11 @@ energy_profiler:
     - name: home_office
       power: sensor.home_office_power
       energy: sensor.home_office_energy
-      self_sufficiency_source: null    # this device only: no solar split (drops levels 3-4)
+      power_flows: null                # this device only: no split (drops levels 3-4)
       periods: [daily, monthly]        # fewer meter windows than the default
 ```
+
+`power_flows:` is replaced wholesale by a device, never merged key by key — a half-inherited block would mix two houses' readings.
 
 ## Documentation
 
@@ -146,6 +166,7 @@ energy_profiler:
 | [Entity reference](docs/entities.md) | Flat lookup: you see an entity, you want to know what it is, what unlocked it and how to record it |
 | [Configuration](docs/configuration.md) | Every option, grouped by area: base, shared defaults, running detection, cycle analytics, standby |
 | [Services & Actions](docs/services.md) | `reset` and the entities it supports; which entities are Lean-native meters and answer to Lean's own services |
+| [The UI surface](docs/ui.md) | The device pages: one per appliance plus a system device with the live house shares, the derived solar contribution, and the declared configuration |
 
 ### Examples
 
