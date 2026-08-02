@@ -32,13 +32,16 @@ With a single channel its share equals self-sufficiency, so it is not created tw
 
 > **These are not the per-device percentages over the same period.** The house ones are instantaneous readings of the flows; the per-device ones divide two accumulators, so a closed period meter gives the *energy-weighted* share. On a sunny afternoon followed by a grid-fed evening the two will differ, and both are right — they answer different questions. See [Level 3](levels/03-self-sufficiency.md#percentages-are-outputs-never-inputs).
 
-### The derived solar contribution
+### The derived contribution
 
 | Entity | Unit | Built when |
 | --- | --- | --- |
-| `sensor.energy_profiler_power_from_solar` | W | `solar` is derived (i.e. you declared `load`) |
+| `sensor.energy_profiler_power_from_solar` | W | `load` declared **and** a solar channel exists (i.e. `battery` declared too) |
+| `sensor.energy_profiler_power_from_self` | W | `load` declared with no channels — same number, honest name |
 
-This one earns its place. When the solar contribution is computed as `load − grid − battery`, that number lives only inside the splitter and nothing else can see it — yet every device's attribution depends on it.
+The name claims only what the configuration supports. With a solar channel declared, the derived remainder *is* the solar contribution. With only `load` and `grid`, it is whatever is not coming from the grid — sun, wind, a battery you never declared — so it stays `from_self`, exactly like the per-device entities at that level.
+
+This one earns its place. When the contribution is computed as `load − grid − battery`, that number lives only inside the splitter and nothing else can see it — yet every device's attribution depends on it.
 
 Publishing it makes the flow configuration checkable. Put it on a chart for a day and it should look like a solar curve clipped by your own consumption: flat at zero overnight, rising through the morning, dropping when a big load pulls from the grid. If instead it sits at zero at noon, or tracks your production curve exactly (including what goes to the battery), the declared flows are wrong — and every per-device split is wrong in the same way, silently.
 

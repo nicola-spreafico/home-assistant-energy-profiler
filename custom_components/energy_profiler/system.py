@@ -226,18 +226,23 @@ def build(hass: HomeAssistant, defaults: dict, devices: list) -> list:
             for channel in flows["channels"]
         ]
 
-    # The derived solar contribution: the one flow nobody else can see.
+    # The derived contribution: the one flow nobody else can see, since it is
+    # computed here rather than read from a sensor. Published whenever it is
+    # derived at all — being able to check the number every attribution runs on
+    # is a separate question from whether it has earned a name.
     #
-    # Deliberately not gated on the solar *channel* existing. Whether the
-    # per-device entities may be named "solar" is a question about what can
-    # honestly be claimed; whether you can see the number the whole attribution
-    # runs on is a question about being able to check it. Only the second one
-    # matters here, and it is answerable whenever the value is derived at all.
+    # And the name says only what can be claimed. With a solar channel declared
+    # this *is* the solar contribution; with only `load` and `grid` it is
+    # whatever is not coming from the grid, which may be sun, wind, a battery
+    # that was never declared, or anything else — so it stays `from_self`.
     if flows["derives_solar"]:
+        qualified = CONF_FLOW_SOLAR in flows["channels"]
         entities.append(
             HouseFlowPowerSensor(
-                hass, slug=f"{SYSTEM_PREFIX}_power_from_solar",
-                flows=flows, portion=CONF_FLOW_SOLAR, icon=ICON_SOLAR,
+                hass,
+                slug=f"{SYSTEM_PREFIX}_power_from_{CONF_FLOW_SOLAR if qualified else 'self'}",
+                flows=flows, portion=CONF_FLOW_SOLAR,
+                icon=ICON_SOLAR if qualified else ICON_SELF,
             )
         )
 
