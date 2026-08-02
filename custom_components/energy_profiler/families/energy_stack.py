@@ -8,14 +8,21 @@ Per group ``<base>`` (= ``<prefix>_<name_base>``), permuted over the configured
 periods:
 
 - ``<base>_lifetime`` + ``<base>_<period>``            kWh accumulator + meters
-- ``<base>_from_self`` / ``_from_grid`` (+ meters)     self/grid split     [needs self_sufficiency_source]
-- ``<base>_from_solar`` / ``_from_battery`` (+ meters) self split in two   [needs solar_share_source or battery_share_source]
+- ``<base>_from_self`` / ``_from_grid`` (+ meters)     self/grid split     [needs power_flows]
+- ``<base>_from_solar`` / ``_from_battery`` (+ meters) one per declared channel
 - ``<base>_cost`` (+ meters)                           € at consumption    [needs energy_price]
 - ``<base>_from_grid_savings`` / ``_from_grid_cost``   € views of the split [needs both]
-- ``<base>_self_sufficiency`` (+ gauge meters)         live % ratio        [needs self_sufficiency_source]
+- ``<base>_from_*_percentage`` (+ gauge meters)          each portion's % of the group total
+- ``<base>_from_*_percentage`` (+ gauge meters)        each portion's % of the total
+
+``from_self`` is kept even when a single channel makes it numerically identical
+to that channel: aggregate "what did not come from the grid" is the quantity the
+monetary view prices, and the one analytics ask for when the source does not
+matter. The per-portion percentages, by contrast, are only created where they
+say something new — with one channel, its percentage *is* self-sufficiency.
 
 The total group additionally gets the instantaneous cost projections
-(``<base>_cost_instant_*`` and, with a self-sufficiency source,
+(``<base>_cost_instant_*`` and, with house flows configured,
 ``<base>_cost_instant_from_grid_*``), one per instant period: the device's
 ``instant_periods:`` when set, otherwise its ``periods:``. The gated groups
 source the *decoupled* total lifetime, so every group inherits the
@@ -25,20 +32,20 @@ reset/plug-swap protection.
 from homeassistant.components.sensor import SensorDeviceClass
 
 from ..const import (
-    CONF_BATTERY_SHARE_SOURCE,
     CONF_COST_PRECISION,
     CONF_ENERGY_PRICE,
+    CONF_FLOW_BATTERY,
+    CONF_FLOW_SOLAR,
     CONF_POWER,
-    CONF_SELF_SUFFICIENCY_SOURCE,
-    CONF_SOLAR_SHARE_SOURCE,
     DEFAULT_COST_PRECISION,
     DEFAULT_PERCENTAGE_PRECISION,
 )
+from ..flows import resolve_flows
 from ..instant import INSTANT_COST_PERIODS, InstantCostSensor, resolve_instant_periods
 from ..integrator import EnergyCostIntegratorSensor
 from ..lean import build_period_meters
 from ..lifetime import EnergyLifetimeSensor, GatedEnergyAccumulator
-from ..split import EnergyBalancerSensor, SplitPartnerSensor, SelfSufficiencyRatioSensor
+from ..split import EnergyFlowSplitter, EnergyRatioSensor, SplitPortionSensor
 
 ICON_SELF = "mdi:solar-panel"
 ICON_GRID = "mdi:transmission-tower"
@@ -46,6 +53,8 @@ ICON_SOLAR = "mdi:weather-sunny"
 ICON_BATTERY = "mdi:home-battery"
 ICON_SAVINGS = "mdi:piggy-bank"
 ICON_GRID_COST = "mdi:cash-minus"
+
+_CHANNEL_ICONS = {CONF_FLOW_SOLAR: ICON_SOLAR, CONF_FLOW_BATTERY: ICON_BATTERY}
 
 
 def build_stack(
@@ -67,7 +76,7 @@ def build_stack(
     prefix = device["prefix"]
     base = f"{prefix}_{name_base}"
     price = device.get(CONF_ENERGY_PRICE)
-    ratio = device.get(CONF_SELF_SUFFICIENCY_SOURCE)
+    flows = resolve_flows(device)
     cost_precision = device.get(CONF_COST_PRECISION, DEFAULT_COST_PRECISION)
     instant_periods = resolve_instant_periods(device) if include_instant else []
     ENERGY = SensorDeviceClass.ENERGY
@@ -86,64 +95,37 @@ def build_stack(
         name_suffix=name_base, unit="kWh", device_class=ENERGY,
     )
 
-    # Solar/grid split: the balancer owns the single atomic split of the group
-    # lifetime's deltas and pushes the exact remainder to the passive partner,
-    # so from_self + from_grid == the group total, always. Gating is inherited:
-    # the source only moves while the gate is open.
-    if ratio:
+    # Grid/self/channel split: one splitter owns the single atomic attribution of
+    # the group lifetime's deltas and pushes exact remainders into the passive
+    # portions, so from_self + from_grid == the group total and (with two
+    # channels) from_solar + from_battery == from_self, always. Gating is
+    # inherited: the source only moves while the gate is open.
+    if flows is not None:
         from_self_lifetime = f"{base}_from_self_lifetime"
         from_grid_lifetime = f"{base}_from_grid_lifetime"
-        from_grid = SplitPartnerSensor(hass, slug=from_grid_lifetime, icon=ICON_GRID)
-        from_self = EnergyBalancerSensor(
+        from_grid = SplitPortionSensor(hass, slug=from_grid_lifetime, icon=ICON_GRID)
+        channel_portions = {
+            channel: SplitPortionSensor(
+                hass, slug=f"{base}_from_{channel}_lifetime", icon=_CHANNEL_ICONS[channel]
+            )
+            for channel in flows["channels"]
+        }
+        from_self = EnergyFlowSplitter(
             hass,
             slug=from_self_lifetime,
             energy_source=f"sensor.{lifetime_slug}",
-            ratio_source=ratio,
-            partner=from_grid,
+            flows=flows,
+            grid_portion=from_grid,
+            channel_portions=channel_portions,
             icon=ICON_SELF,
         )
-        entities += [from_self, from_grid]
-        entities += build_period_meters(
-            hass, device, source=f"sensor.{from_self_lifetime}",
-            name_suffix=f"{name_base}_from_self", unit="kWh", device_class=ENERGY,
-        )
-        entities += build_period_meters(
-            hass, device, source=f"sensor.{from_grid_lifetime}",
-            name_suffix=f"{name_base}_from_grid", unit="kWh", device_class=ENERGY,
-        )
-
-        # Optional second-level split of the self share: solar vs battery.
-        # Same balancer mechanism, one level down: from_self's deltas are split
-        # by the share %, so from_solar + from_battery == from_self, always.
-        # The user provides either the solar or the battery share — whichever
-        # they gave becomes the balancer, the other side is the exact remainder.
-        solar_share = device.get(CONF_SOLAR_SHARE_SOURCE)
-        battery_share = device.get(CONF_BATTERY_SHARE_SOURCE)
-        if solar_share or battery_share:
-            from_solar_lifetime = f"{base}_from_solar_lifetime"
-            from_battery_lifetime = f"{base}_from_battery_lifetime"
-            if solar_share:
-                partner = SplitPartnerSensor(hass, slug=from_battery_lifetime, icon=ICON_BATTERY)
-                balancer = EnergyBalancerSensor(
-                    hass, slug=from_solar_lifetime,
-                    energy_source=f"sensor.{from_self_lifetime}",
-                    ratio_source=solar_share, partner=partner, icon=ICON_SOLAR,
-                )
-            else:
-                partner = SplitPartnerSensor(hass, slug=from_solar_lifetime, icon=ICON_SOLAR)
-                balancer = EnergyBalancerSensor(
-                    hass, slug=from_battery_lifetime,
-                    energy_source=f"sensor.{from_self_lifetime}",
-                    ratio_source=battery_share, partner=partner, icon=ICON_BATTERY,
-                )
-            entities += [balancer, partner]
+        entities += [from_self, from_grid, *channel_portions.values()]
+        for portion in ("from_self", "from_grid", *(
+            f"from_{channel}" for channel in flows["channels"]
+        )):
             entities += build_period_meters(
-                hass, device, source=f"sensor.{from_solar_lifetime}",
-                name_suffix=f"{name_base}_from_solar", unit="kWh", device_class=ENERGY,
-            )
-            entities += build_period_meters(
-                hass, device, source=f"sensor.{from_battery_lifetime}",
-                name_suffix=f"{name_base}_from_battery", unit="kWh", device_class=ENERGY,
+                hass, device, source=f"sensor.{base}_{portion}_lifetime",
+                name_suffix=f"{name_base}_{portion}", unit="kWh", device_class=ENERGY,
             )
 
     # Cost: each delta priced at the tariff valid at that moment.
@@ -175,8 +157,10 @@ def build_stack(
                     )
                 )
 
-    # Monetary views of the split.
-    if price and ratio:
+    # Monetary views of the split. They sit on the self/grid boundary because
+    # that is where money changes hands: solar and battery both cost nothing, so
+    # splitting savings between them would be two entities saying one thing.
+    if price and flows is not None:
         savings_lifetime = f"{base}_from_grid_savings_lifetime"
         grid_cost_lifetime = f"{base}_from_grid_cost_lifetime"
         entities += [
@@ -221,22 +205,39 @@ def build_stack(
                     )
                 )
 
-    # Self-sufficiency %: a live ratio, consolidated to one LTS gauge point per
+    # Percentage views: live ratios, each consolidated to one LTS gauge point per
     # period (absolute_values + net_consumption: a gauge, not a cumulative sum).
-    if ratio:
-        ss_lifetime = f"{base}_self_sufficiency_lifetime"
-        entities.append(
-            SelfSufficiencyRatioSensor(
-                hass, slug=ss_lifetime,
-                numerator=f"sensor.{base}_from_self_lifetime",
-                denominator=f"sensor.{lifetime_slug}",
+    #
+    # Every one of them divides two *accumulators*, never averages instantaneous
+    # percentages: a closed period meter therefore reads the energy-weighted
+    # share of that period, which is the number "how much of yesterday was sun"
+    # actually asks for.
+    if flows is not None:
+        ratios = [(f"from_{p}_percentage", f"from_{p}", i) for p, i in (("self", ICON_SELF), ("grid", ICON_GRID))]
+        # Per-channel percentages only where they say something new: with a
+        # single channel, that channel is the whole self share and its
+        # percentage would be a second copy of self-sufficiency.
+        if len(flows["channels"]) > 1:
+            ratios += [
+                (f"from_{channel}_percentage", f"from_{channel}", _CHANNEL_ICONS[channel])
+                for channel in flows["channels"]
+            ]
+
+        for suffix, portion, icon in ratios:
+            ratio_lifetime = f"{base}_{suffix}_lifetime"
+            entities.append(
+                EnergyRatioSensor(
+                    hass, slug=ratio_lifetime,
+                    numerator=f"sensor.{base}_{portion}_lifetime",
+                    denominator=f"sensor.{lifetime_slug}",
+                    icon=icon,
+                )
             )
-        )
-        entities += build_period_meters(
-            hass, device, source=f"sensor.{ss_lifetime}",
-            name_suffix=f"{name_base}_self_sufficiency", unit="%", device_class=None,
-            net_consumption=True, absolute_values=True,
-            display_precision=DEFAULT_PERCENTAGE_PRECISION,
-        )
+            entities += build_period_meters(
+                hass, device, source=f"sensor.{ratio_lifetime}",
+                name_suffix=f"{name_base}_{suffix}", unit="%", device_class=None,
+                net_consumption=True, absolute_values=True,
+                display_precision=DEFAULT_PERCENTAGE_PRECISION,
+            )
 
     return entities

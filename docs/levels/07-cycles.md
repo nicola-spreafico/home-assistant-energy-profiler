@@ -86,13 +86,13 @@ Which metrics exist scales with the levels you configured:
 | `sensor.<p>_cycle_live_duration` 💤 | s | Elapsed time of the in-progress cycle |
 | `sensor.<p>_cycles_duration_mean` 📈 | s | Average cycle duration |
 | `sensor.<p>_cycles_duration_summary_human` 💤 | — | Total running time formatted for dashboards (`12h 36m`) |
-| `sensor.<p>_cycle_completed_self_sufficiency` 📈 | % | Self-sufficiency of the last completed cycle ([L3](03-self-sufficiency.md)) |
-| `sensor.<p>_cycle_live_self_sufficiency` 💤 | % | Self-sufficiency of the in-progress cycle ([L3](03-self-sufficiency.md)) |
-| `sensor.<p>_cycles_self_sufficiency_percentage_mean` 📈 | % | Energy-weighted self-sufficiency across all valid cycles ([L3](03-self-sufficiency.md)) |
+| `sensor.<p>_cycle_completed_from_self_percentage` 📈 | % | Self-sufficiency of the last completed cycle ([L3](03-self-sufficiency.md)) |
+| `sensor.<p>_cycle_live_from_self_percentage` 💤 | % | Self-sufficiency of the in-progress cycle ([L3](03-self-sufficiency.md)) |
+| `sensor.<p>_cycles_from_self_percentage_mean` 📈 | % | Energy-weighted self-sufficiency across all valid cycles ([L3](03-self-sufficiency.md)) |
 | `sensor.<p>_cycle_completed_costovertime` 📈 | €/h | Cost per hour of the last completed cycle ([L2](02-cost.md)) |
 | `sensor.<p>_cycles_costovertime_mean` 📈 | €/h | Average cost per running hour ([L2](02-cost.md)) |
 
-**Inventory —** fully configured, with `[daily, monthly, yearly]`: **54 new entities** (177 cumulative) — 48 fixed plus 2 per period.
+**Inventory —** fully configured, with `[daily, monthly, yearly]`: **54 new entities** (213 cumulative) — 48 fixed plus 2 per period.
 
 ## Restarting mid-cycle
 
@@ -126,7 +126,7 @@ cycle_count: 42              # valid cycles so far
 
 ## You are at the end of the path
 
-177 entities on a fully-equipped device, and only a handful of database rows per day — provided the recorder is configured as described in [Recorder Setup](../recorder.md).
+213 entities on a fully-equipped device, and only a handful of database rows per day — provided the recorder is configured as described in [Recorder Setup](../recorder.md).
 
 From here: the [entity reference](../entities.md) for looking anything up, [Configuration](../configuration.md) for every option in detail, and [Services & Actions](../services.md) for `reset` and the Lean maintenance services.
 

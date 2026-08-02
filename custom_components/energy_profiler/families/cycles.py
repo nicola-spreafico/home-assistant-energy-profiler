@@ -4,7 +4,8 @@ Replaces the whole ``003_cycles`` folder:
 - ``_running`` gatekeeper (binary sensor, ``build_binary_sensors``);
 - start/stop snapshots, validation against min/max limits;
 - per-metric completed values, live (in-progress) values and means, for energy and
-  (when the families exist) cost, from_self, from_grid, savings, grid_cost;
+  (when the families exist) cost, from_self, from_grid, the declared self channels,
+  savings, grid_cost;
 - count and duration, exposed per-period via Lean meters;
 - ``cycle_completed`` / ``cycle_discarded`` events for user automations.
 - ``cycle_completed_start/stop``: the frozen boundaries of the last valid cycle,
@@ -25,13 +26,14 @@ from ..const import (
     CONF_STATE,
     CONF_LIMITS,
     CONF_ENERGY_PRICE,
-    CONF_SELF_SUFFICIENCY_SOURCE,
-    CONF_SOLAR_SHARE_SOURCE,
-    CONF_BATTERY_SHARE_SOURCE,
     CONF_COST_PRECISION,
+    CONF_FLOW_BATTERY,
+    CONF_FLOW_SOLAR,
     DEFAULT_COST_PRECISION,
     DEFAULT_PERCENTAGE_PRECISION,
 )
+
+_CHANNEL_ICONS = {CONF_FLOW_SOLAR: "mdi:weather-sunny", CONF_FLOW_BATTERY: "mdi:home-battery"}
 
 
 def running_entity_id(prefix: str) -> str:
@@ -62,8 +64,9 @@ def build(hass, device):
         MeanSensor,
         ScaledRatioSensor,
     )
+    from ..flows import resolve_flows
     from ..lean import build_period_meters
-    from ..split import SelfSufficiencyRatioSensor
+    from ..split import EnergyRatioSensor
 
     prefix = device["prefix"]
     running = running_entity_id(prefix)
@@ -74,7 +77,8 @@ def build(hass, device):
     DURATION = SensorDeviceClass.DURATION
 
     price = device.get(CONF_ENERGY_PRICE)
-    has_self = device.get(CONF_SELF_SUFFICIENCY_SOURCE)
+    flows = resolve_flows(device)
+    has_self = flows is not None
     cost_precision = device.get(CONF_COST_PRECISION, DEFAULT_COST_PRECISION)
 
     # Snapshots + validation status.
@@ -125,15 +129,17 @@ def build(hass, device):
         metric("from_grid", f"{prefix}_energy_from_grid_lifetime", f"{prefix}_cycle_completed_energy_from_grid",
                f"{prefix}_cycles_energy_from_grid_mean", f"{prefix}_cycles_energy_from_grid_lifetime",
                f"{prefix}_cycle_live_energy_from_grid", "kWh", ENERGY, "mdi:transmission-tower")
-    # Second-level split of self (solar vs battery): e.g. how much sun vs how
-    # much battery a washing-machine run actually used.
-    if has_self and (device.get(CONF_SOLAR_SHARE_SOURCE) or device.get(CONF_BATTERY_SHARE_SOURCE)):
-        metric("from_solar", f"{prefix}_energy_from_solar_lifetime", f"{prefix}_cycle_completed_energy_from_solar",
-               f"{prefix}_cycles_energy_from_solar_mean", f"{prefix}_cycles_energy_from_solar_lifetime",
-               f"{prefix}_cycle_live_energy_from_solar", "kWh", ENERGY, "mdi:weather-sunny")
-        metric("from_battery", f"{prefix}_energy_from_battery_lifetime", f"{prefix}_cycle_completed_energy_from_battery",
-               f"{prefix}_cycles_energy_from_battery_mean", f"{prefix}_cycles_energy_from_battery_lifetime",
-               f"{prefix}_cycle_live_energy_from_battery", "kWh", ENERGY, "mdi:home-battery")
+    # One metric per declared self channel: e.g. how much sun vs how much battery
+    # a washing-machine run actually used. Mirrors the energy stack exactly —
+    # a channel has cycle analytics because it has a lifetime accumulator.
+    if has_self:
+        for channel in flows["channels"]:
+            metric(f"from_{channel}", f"{prefix}_energy_from_{channel}_lifetime",
+                   f"{prefix}_cycle_completed_energy_from_{channel}",
+                   f"{prefix}_cycles_energy_from_{channel}_mean",
+                   f"{prefix}_cycles_energy_from_{channel}_lifetime",
+                   f"{prefix}_cycle_live_energy_from_{channel}", "kWh", ENERGY,
+                   _CHANNEL_ICONS[channel])
     if price and has_self:
         metric("savings", f"{prefix}_energy_from_grid_savings_lifetime", f"{prefix}_cycle_completed_energy_from_grid_savings",
                f"{prefix}_cycles_energy_from_grid_savings_mean", f"{prefix}_cycles_energy_from_grid_savings_lifetime",
@@ -152,16 +158,16 @@ def build(hass, device):
     # Self-sufficiency % (completed + mean over cycles + live), when applicable.
     completed_ss = None
     if has_self:
-        completed_ss = CompletedValueSensor(hass, slug=f"{prefix}_cycle_completed_self_sufficiency", unit="%", device_class=None, icon="mdi:solar-power-variant", display_precision=DEFAULT_PERCENTAGE_PRECISION)
+        completed_ss = CompletedValueSensor(hass, slug=f"{prefix}_cycle_completed_from_self_percentage", unit="%", device_class=None, icon="mdi:solar-power-variant", display_precision=DEFAULT_PERCENTAGE_PRECISION)
         entities += [
             completed_ss,
-            SelfSufficiencyRatioSensor(
-                hass, slug=f"{prefix}_cycles_self_sufficiency_percentage_mean",
+            EnergyRatioSensor(
+                hass, slug=f"{prefix}_cycles_from_self_percentage_mean",
                 numerator=f"sensor.{prefix}_cycles_energy_from_self_lifetime",
                 denominator=f"sensor.{prefix}_cycles_energy_lifetime",
             ),
-            SelfSufficiencyRatioSensor(
-                hass, slug=f"{prefix}_cycle_live_self_sufficiency",
+            EnergyRatioSensor(
+                hass, slug=f"{prefix}_cycle_live_from_self_percentage",
                 numerator=f"sensor.{prefix}_cycle_live_energy_from_self",
                 denominator=f"sensor.{prefix}_cycle_live_energy",
             ),

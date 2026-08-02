@@ -9,7 +9,12 @@
 energy_profiler:
   defaults:
     energy_price: sensor.energy_price_purchase
-    self_sufficiency_source: sensor.home_self_sufficiency_score
+    # The house flows the per-device split is derived from, in W. `solar` is not
+    # declared: it is the remainder of `load` once grid and battery are taken off.
+    power_flows:
+      load: sensor.house_load_power
+      grid: sensor.grid_import_power
+      battery: sensor.battery_discharge_power
     name_suffix: _em
     # Throttle live LTS updates fleet-wide (fewer upserts/hour than the 5-min
     # default; period boundaries are still written exactly).
@@ -22,9 +27,9 @@ energy_profiler:
     - name: home_office
       power: sensor.home_office_power
       energy: sensor.home_office_energy
-      self_sufficiency_source: null   # opt out of the shared default
+      power_flows: null   # opt out of the shared default
 
-    # 2) Full solar/grid breakdown (inherits the shared self_sufficiency_source).
+    # 2) Full grid/solar/battery breakdown (inherits the shared power_flows).
     - name: heat_pump
       power: sensor.heat_pump_power
       energy: sensor.heat_pump_energy

@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md)
 
-The integration registers **one** service of its own, `energy_profiler.reset`, scoped to the entities it owns directly. Everything meter-shaped is a native [Lean Utility Meter](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter) entity and is maintained with Lean's own services — see [the second section](#maintaining-the-period-meters-lean-native-services).
+The integration registers `energy_profiler.reset` for the entities it owns directly, plus the four [Lean Utility Meter](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter) maintenance services re-exposed under its own domain — see [the second section](#maintaining-the-period-meters-lean-native-services) for why the domain is `energy_profiler` and not `lean_utility_meter`.
 
 ## `energy_profiler.reset`
 
@@ -42,20 +42,23 @@ Every per-period meter — the entities ending in a period suffix (`_hourly`, `_
 - `sensor.<base>_from_self_<period>` / `sensor.<base>_from_grid_<period>`
 - `sensor.<base>_from_solar_<period>` / `sensor.<base>_from_battery_<period>`
 - `sensor.<base>_from_grid_savings_<period>` / `sensor.<base>_from_grid_cost_<period>`
-- `sensor.<base>_self_sufficiency_<period>`
+- `sensor.<base>_from_self_percentage_<period>`
+- `sensor.<base>_from_grid_percentage_<period>`, `sensor.<base>_from_solar_percentage_<period>`, `sensor.<base>_from_battery_percentage_<period>`
 
 plus, from the cycles family:
 
 - `sensor.<p>_cycles_count_<period>`
 - `sensor.<p>_cycles_duration_<period>`
 
-is a **native Lean Utility Meter entity** (created through the `lean_utility_meter` platform via discovery), so Lean's services target it directly:
+is a **native Lean Utility Meter entity**, with all of Lean's behaviour and self-diagnostics. But it is created on *this* integration's platform (the only way it can belong to a device — see [The UI surface](ui.md#why-the-period-meters-are-on-the-device-pages)), and Home Assistant registers entity services under the platform's own domain. So the maintenance calls are:
 
 | Service | Use it to |
 | --- | --- |
-| `lean_utility_meter.thin_history` | retro-clean a series polluted by recorder rows (see [Recorder Setup](recorder.md#what-happens-if-you-get-it-wrong)) |
-| `lean_utility_meter.calibrate` | set the meter's live value manually |
-| `lean_utility_meter.import_history` | import consolidated history from another entity (migrations) |
-| `lean_utility_meter.clear_history` | permanently delete the meter's statistics |
+| `energy_profiler.thin_history` | retro-clean a series polluted by recorder rows (see [Recorder Setup](recorder.md#what-happens-if-you-get-it-wrong)) |
+| `energy_profiler.calibrate` | set the meter's live value manually |
+| `energy_profiler.import_history` | import consolidated history from another entity (migrations) |
+| `energy_profiler.clear_history` | permanently delete the meter's statistics |
 
-Semantics, warnings and examples are documented in the [Lean services page](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter/blob/master/docs/services.md) — including the mandatory backup advice before the destructive ones. Lean's Repairs self-diagnostics (recorder exclusion, points overage) also cover these meters automatically.
+> ⚠️ **Not `lean_utility_meter.thin_history`.** Those services still exist and still serve meters you declared in Lean's own YAML, but they no longer match these entities. An automation written against the Lean domain will silently target nothing.
+
+The implementations are Lean's, re-registered verbatim: same parameters, same semantics, same warnings — documented on the [Lean services page](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter/blob/master/docs/services.md), including the mandatory backup advice before the destructive ones. Lean's Repairs self-diagnostics (recorder exclusion, points overage) cover these meters automatically, since they are scheduled by the entity rather than by the platform.

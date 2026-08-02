@@ -50,16 +50,21 @@ Read this table once and it applies to all three groups: substitute `<base>` wit
 | --- | --- | --- | --- |
 | `<base>_lifetime` 💤 ↺ | kWh | [L1](levels/01-energy.md) | All-time accumulator for the slice. For the total group this is the **decoupled** total (positive deltas only) every other group and the cycle analytics read from |
 | `<base>_<period>` 🚫 | kWh | [L1](levels/01-energy.md) | Lean period meters: live in the UI, one consolidated long-term row per closed period |
-| `<base>_from_self_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | [L3](levels/03-self-sufficiency.md) | Share covered by self-production: each delta split by the current self-sufficiency % |
+| `<base>_from_self_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | [L3](levels/03-self-sufficiency.md) | Share covered by self-production: each delta split by the house flows valid at that instant |
 | `<base>_from_grid_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | [L3](levels/03-self-sufficiency.md) | Grid share — the exact remainder of the same atomic split, so `from_self + from_grid` = the total, always |
-| `<base>_from_solar_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | [L4](levels/04-solar-battery.md) | Second-level split of the self share: energy straight from the panels |
-| `<base>_from_battery_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | [L4](levels/04-solar-battery.md) | Battery-discharge share — the complement, so `from_solar + from_battery = from_self` |
+| `<base>_from_solar_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | [L4](levels/04-solar-battery.md) | Self share coming straight from the panels. Only with a solar channel declared |
+| `<base>_from_battery_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | [L4](levels/04-solar-battery.md) | Battery-discharge share — the remainder when both channels exist, so `from_solar + from_battery = from_self` |
 | `<base>_cost_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | [L2](levels/02-cost.md) | Cost integrator: each delta priced at the tariff valid *at that moment* |
 | `<base>_from_grid_savings_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | [L2](levels/02-cost.md)+[L3](levels/03-self-sufficiency.md) | What self-production saved (the `from_self` share priced) |
 | `<base>_from_grid_cost_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | [L2](levels/02-cost.md)+[L3](levels/03-self-sufficiency.md) | What the grid imports actually cost (`from_grid` priced) |
-| `<base>_self_sufficiency_lifetime` 💤 (+ `_<period>` 🚫) | % | [L3](levels/03-self-sufficiency.md) | Live ratio `from_self / total`; the period meters snapshot it as a gauge (one long-term point per period) |
+| `<base>_from_self_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | [L3](levels/03-self-sufficiency.md) | Live ratio `from_self / total`; the period meters snapshot it as a gauge (one long-term point per period) |
+| `<base>_from_grid_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | [L3](levels/03-self-sufficiency.md) | The grid's share of the total — the complement of self-sufficiency, as its own gauge |
+| `<base>_from_solar_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | [L4](levels/04-solar-battery.md) | Solar share **of the total**. Only when both channels exist — with one, it would duplicate self-sufficiency |
+| `<base>_from_battery_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | [L4](levels/04-solar-battery.md) | Battery share of the total. Same condition |
 
-Fully configured, each group is **36 entities** with `[daily, monthly, yearly]`.
+Fully configured, each group is **48 entities** with `[daily, monthly, yearly]`.
+
+**All percentages divide two accumulators**, never average instantaneous readings — so a closed period meter carries the *energy-weighted* share of that period. `from_grid_percentage`, `from_solar_percentage` and `from_battery_percentage` sum to 100, and self-sufficiency is the sum of the last two. There is no "percentage of self" entity: that quantity only ever existed as a configuration input, and no configuration input is a percentage anymore.
 
 **Decimals —** kWh and W rows get their precision from Home Assistant, which derives one from the device class. € and % have no device class default, so the integration supplies one: € shows 2 decimals (configurable via [`cost_precision:`](configuration.md#shared-defaults-defaults)), % shows 1 (fixed). In every case this is display only — the stored state and the long-term statistics keep their full precision, and a precision you set by hand on a single entity overrides it.
 
@@ -72,7 +77,7 @@ Watts, read straight from the power sensor. Total group only: no gate applies to
 | `sensor.<p>_power_max` 📈 ↺ | W | [L1](levels/01-energy.md) | Running peak of the power sensor, kept across restarts until reset |
 | `sensor.<p>_power_from_self` 💤 | W | [L3](levels/03-self-sufficiency.md) | Instantaneous share covered by self-production (`power × pct`) |
 | `sensor.<p>_power_from_grid` 💤 | W | [L3](levels/03-self-sufficiency.md) | Instantaneous grid share — the exact remainder |
-| `sensor.<p>_power_from_solar` 💤 | W | [L4](levels/04-solar-battery.md) | Watts straight from the panels (`power × ss% × share%`) |
+| `sensor.<p>_power_from_solar` 💤 | W | [L4](levels/04-solar-battery.md) | Watts straight from the panels. Only with a solar channel declared |
 | `sensor.<p>_power_from_battery` 💤 | W | [L4](levels/04-solar-battery.md) | Battery-discharge watts — the complement inside self |
 
 ## Instantaneous cost projections
@@ -147,9 +152,9 @@ Duration and derived:
 | `sensor.<p>_cycle_live_duration` 💤 | s | Elapsed time of the in-progress cycle |
 | `sensor.<p>_cycles_duration_mean` 📈 | s | Average cycle duration |
 | `sensor.<p>_cycles_duration_summary_human` 💤 | — | Total running time formatted for dashboards (`12h 36m`) |
-| `sensor.<p>_cycle_completed_self_sufficiency` 📈 | % | Self-sufficiency of the last completed cycle |
-| `sensor.<p>_cycle_live_self_sufficiency` 💤 | % | Self-sufficiency of the in-progress cycle |
-| `sensor.<p>_cycles_self_sufficiency_percentage_mean` 📈 | % | Energy-weighted self-sufficiency across all valid cycles |
+| `sensor.<p>_cycle_completed_from_self_percentage` 📈 | % | Self-sufficiency of the last completed cycle |
+| `sensor.<p>_cycle_live_from_self_percentage` 💤 | % | Self-sufficiency of the in-progress cycle |
+| `sensor.<p>_cycles_from_self_percentage_mean` 📈 | % | Energy-weighted self-sufficiency across all valid cycles |
 | `sensor.<p>_cycle_completed_costovertime` 📈 | €/h | Cost per hour of the last completed cycle |
 | `sensor.<p>_cycles_costovertime_mean` 📈 | €/h | Average cost per running hour across all valid cycles |
 
@@ -161,11 +166,11 @@ Entity count for a fully-configured device with the default `[daily, monthly, ye
 
 | Block | Entities | Level |
 | --- | --- | --- |
-| Power + total energy group | 47 | [1](levels/01-energy.md)–[4](levels/04-solar-battery.md) |
-| Running signal + running energy group | 37 | [5](levels/05-running.md) |
-| Standby gatekeeper, duration + standby energy group | 38 | [6](levels/06-standby.md) |
+| Power + total energy group | 59 | [1](levels/01-energy.md)–[4](levels/04-solar-battery.md) |
+| Running signal + running energy group | 49 | [5](levels/05-running.md) |
+| Standby gatekeeper, duration + standby energy group | 50 | [6](levels/06-standby.md) |
 | Cycle analytics | 54 | [7](levels/07-cycles.md) |
 | Status label | 1 | [5](levels/05-running.md)/[6](levels/06-standby.md) |
-| **Total** | **177** | |
+| **Total** | **213** | |
 
-84 of those are fixed and 31 scale with the number of configured periods.
+93 of those are fixed and 40 scale with the number of configured periods.

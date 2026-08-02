@@ -13,11 +13,14 @@ selection). The cycles *family* is the analytics consumer and requires both
 import logging
 from typing import Any
 
+from homeassistant.helpers.device_registry import DeviceInfo
+
 from .const import (
+    DOMAIN,
+    SYSTEM_DEVICE_ID,
+    SYSTEM_DEVICE_NAME,
     CONF_ENERGY_PRICE,
-    CONF_SELF_SUFFICIENCY_SOURCE,
-    CONF_SOLAR_SHARE_SOURCE,
-    CONF_BATTERY_SHARE_SOURCE,
+    CONF_POWER_FLOWS,
     CONF_NAME_SUFFIX,
     CONF_LIVE_UPDATE_INTERVAL,
     CONF_PERIODS,
@@ -39,14 +42,56 @@ _LOGGER = logging.getLogger(__name__)
 # Keys that a device may override from `defaults`.
 _INHERITABLE = (
     CONF_ENERGY_PRICE,
-    CONF_SELF_SUFFICIENCY_SOURCE,
-    CONF_SOLAR_SHARE_SOURCE,
-    CONF_BATTERY_SHARE_SOURCE,
+    CONF_POWER_FLOWS,
     CONF_LIVE_UPDATE_INTERVAL,
     CONF_PERIODS,
     CONF_INSTANT_PERIODS,
     CONF_COST_PRECISION,
 )
+
+
+def entity_label(slug: str, prefix: str) -> str:
+    """The human-readable name of an entity, with its device prefix stripped.
+
+    Entities carry `has_entity_name`, so Home Assistant renders them as
+    "<device> <name>". The device already says which appliance this is, and
+    repeating it would give "Dishwasher dishwasher_em_cycle_completed_cost".
+    What is left is the measurement alone: "Cycle completed cost".
+
+    Sentence case, per Home Assistant's own naming style — only the first word
+    and proper nouns are capitalised.
+    """
+    label = slug.removeprefix(f"{prefix}_").replace("_", " ").strip()
+    if not label:
+        # A slug that *is* the prefix: nothing left to name it by.
+        return slug.replace("_", " ")
+    return label[0].upper() + label[1:]
+
+
+def system_device_info() -> DeviceInfo:
+    """The one house-level device: shared readings, not tied to any appliance."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, SYSTEM_DEVICE_ID)},
+        name=SYSTEM_DEVICE_NAME,
+        manufacturer="Energy Profiler",
+        model="House flows",
+        entry_type=None,
+    )
+
+
+def device_info_for(resolved: dict[str, Any]) -> DeviceInfo:
+    """The device page for one profiled appliance.
+
+    ``via_device`` hangs every appliance off the system device, so the UI shows
+    the house readings as the parent of the devices derived from them.
+    """
+    return DeviceInfo(
+        identifiers={(DOMAIN, resolved["prefix"])},
+        name=resolved[CONF_NAME],
+        manufacturer="Energy Profiler",
+        model="Device profile",
+        via_device=(DOMAIN, SYSTEM_DEVICE_ID),
+    )
 
 
 def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
@@ -56,16 +101,6 @@ def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dic
     for key in _INHERITABLE:
         if key not in resolved and key in defaults:
             resolved[key] = defaults[key]
-
-    # solar/battery share are one option in two spellings (schema enforces the
-    # exclusivity per level); if the device sets one explicitly, drop the other
-    # spelling inherited from the defaults so exactly one survives the merge.
-    for own, other in (
-        (CONF_SOLAR_SHARE_SOURCE, CONF_BATTERY_SHARE_SOURCE),
-        (CONF_BATTERY_SHARE_SOURCE, CONF_SOLAR_SHARE_SOURCE),
-    ):
-        if own in device and other in resolved and other not in device:
-            resolved.pop(other)
 
     suffix = defaults.get(CONF_NAME_SUFFIX, "")
     resolved["prefix"] = f"{device[CONF_NAME]}{suffix}"
@@ -77,8 +112,8 @@ def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dic
 def _enabled_families(resolved: dict[str, Any]) -> list[str]:
     """Decide which entity families to build, from what the config declares.
 
-    Cost and solar-split are not families anymore: they are sub-blocks of each
-    energy group's stack, driven by energy_price / self_sufficiency_source.
+    Cost and the grid/solar/battery split are not families anymore: they are
+    sub-blocks of each energy group's stack, driven by energy_price / power_flows.
     """
     families = [FAMILY_POWER, FAMILY_ENERGY]  # always on
 

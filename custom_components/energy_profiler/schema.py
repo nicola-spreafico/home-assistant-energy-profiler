@@ -23,9 +23,12 @@ from .const import (
     CONF_DEFAULTS,
     CONF_DEVICES,
     CONF_ENERGY_PRICE,
-    CONF_SELF_SUFFICIENCY_SOURCE,
-    CONF_SOLAR_SHARE_SOURCE,
-    CONF_BATTERY_SHARE_SOURCE,
+    CONF_POWER_FLOWS,
+    CONF_FLOW_LOAD,
+    CONF_FLOW_GRID,
+    CONF_FLOW_SOLAR,
+    CONF_FLOW_BATTERY,
+    FLOW_CHANNELS,
     CONF_NAME_SUFFIX,
     CONF_LIVE_UPDATE_INTERVAL,
     CONF_PERIODS,
@@ -53,6 +56,45 @@ from .const import (
 )
 
 PERIOD = vol.In(["hourly", "daily", "weekly", "monthly", "bimonthly", "quarterly", "yearly"])
+
+
+def _validate_power_flows(value: dict) -> dict:
+    """Reject the two ways a flow block can be meaningless or ambiguous.
+
+    `load` exists to derive the solar contribution, which is the one reading
+    people rarely have natively. Giving both is over-specified: rather than
+    silently picking one, say so — a wrong choice here skews every split
+    downstream with no visible symptom.
+    """
+    if CONF_FLOW_LOAD in value and CONF_FLOW_SOLAR in value:
+        raise vol.Invalid(
+            f"'{CONF_POWER_FLOWS}' declares both '{CONF_FLOW_LOAD}' and "
+            f"'{CONF_FLOW_SOLAR}': '{CONF_FLOW_LOAD}' is only used to derive the "
+            f"solar contribution, so it is redundant here. Drop one of the two."
+        )
+    if CONF_FLOW_LOAD not in value and not any(c in value for c in FLOW_CHANNELS):
+        raise vol.Invalid(
+            f"'{CONF_POWER_FLOWS}' needs '{CONF_FLOW_LOAD}' or at least one of "
+            f"'{CONF_FLOW_SOLAR}' / '{CONF_FLOW_BATTERY}': with '{CONF_FLOW_GRID}' "
+            f"alone every device would be 100% grid-fed."
+        )
+    return value
+
+
+# power_flows: — the house flows, in W, that per-device attribution derives from.
+# `grid` is always required (it is the portion that always exists); `load` and
+# the channels shape what the split can say. See flows.py for the resolution.
+POWER_FLOWS_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional(CONF_FLOW_LOAD): cv.entity_id,
+            vol.Required(CONF_FLOW_GRID): cv.entity_id,
+            vol.Optional(CONF_FLOW_SOLAR): cv.entity_id,
+            vol.Optional(CONF_FLOW_BATTERY): cv.entity_id,
+        }
+    ),
+    _validate_power_flows,
+)
 
 # running: — the detection signal. Two trigger flavors: power threshold or template.
 RUNNING_SCHEMA = vol.Any(
@@ -132,11 +174,7 @@ CYCLE_TRACKING_SCHEMA = vol.All(
 DEFAULTS_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_ENERGY_PRICE): cv.entity_id,
-        vol.Optional(CONF_SELF_SUFFICIENCY_SOURCE): cv.entity_id,
-        # Second-level split of the self share (solar vs battery): provide ONE
-        # of the two percentages — the other side is the exact complement.
-        vol.Exclusive(CONF_SOLAR_SHARE_SOURCE, "self_split"): cv.entity_id,
-        vol.Exclusive(CONF_BATTERY_SHARE_SOURCE, "self_split"): cv.entity_id,
+        vol.Optional(CONF_POWER_FLOWS): POWER_FLOWS_SCHEMA,
         vol.Optional(CONF_NAME_SUFFIX, default=DEFAULT_NAME_SUFFIX): cv.string,
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PERIODS, default=DEFAULT_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
@@ -158,9 +196,9 @@ DEVICE_SCHEMA = vol.Schema(
         # Per-device overrides of the shared defaults. `null` explicitly opts the
         # device out of the corresponding family even when a default is set.
         vol.Optional(CONF_ENERGY_PRICE): vol.Any(None, cv.entity_id),
-        vol.Optional(CONF_SELF_SUFFICIENCY_SOURCE): vol.Any(None, cv.entity_id),
-        vol.Exclusive(CONF_SOLAR_SHARE_SOURCE, "self_split"): vol.Any(None, cv.entity_id),
-        vol.Exclusive(CONF_BATTERY_SHARE_SOURCE, "self_split"): vol.Any(None, cv.entity_id),
+        # Replaced wholesale, never merged key-by-key: a half-inherited flow block
+        # would mix two houses' readings. `null` opts the device out of the split.
+        vol.Optional(CONF_POWER_FLOWS): vol.Any(None, POWER_FLOWS_SCHEMA),
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PERIODS): vol.All(cv.ensure_list, [PERIOD]),
         vol.Optional(CONF_INSTANT_PERIODS): vol.All(cv.ensure_list, [PERIOD]),

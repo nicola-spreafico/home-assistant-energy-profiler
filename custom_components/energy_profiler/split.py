@@ -1,17 +1,24 @@
-"""Self-production vs. grid split, in native Python.
+"""Attribution of a device's energy to the house's grid / solar / battery flows.
 
-Reincarnates the generator's ``002_selfsufficiency`` live sources:
+Nobody can know which electron reached the dishwasher. What this module does is
+*attribution*: on each energy tick, a device is assumed to draw from the house
+mix in the proportions the house itself is drawing at that instant, read from
+``power_flows:`` (see flows.py).
 
-- The energy balancer (fragment 002): on each hardware energy tick, split the delta
-  by the instantaneous self-sufficiency percentage into a self-produced and a
-  grid-imported portion. Faithful to the original's **single atomic trigger**: one
-  entity subscribes to the energy source, computes ``self_portion`` once and derives
-  ``grid_portion = diff - self_portion`` (REMAINDER LOGIC), then updates *both*
-  accumulators in the same callback. This guarantees, by construction,
-  ``from_self + from_grid == total consumed`` exactly — no independent-rounding drift,
-  no risk of the two totals desynchronising.
-- ``SelfSufficiencyRatioSensor`` (fragment 007): the live self-sufficiency % for a
-  cycle, ``from_self / total * 100``, computed straight from the two Lean cycle meters.
+**One splitter, one callback.** A single entity subscribes to the group's energy
+source. On each tick it computes every portion from the same delta and the same
+flow reading, then pushes each portion into its accumulator. Portions are
+derived by *remainder* rather than computed independently, which makes the
+invariants exact by construction rather than by luck:
+
+    from_self + from_grid    == the delta        (always)
+    from_solar + from_battery == from_self       (when both channels exist)
+
+The splitter is itself the ``from_self`` accumulator — that portion always
+exists whenever a split exists, so it is the natural owner of the subscription.
+
+``SelfSufficiencyRatioSensor``'s successor, :class:`EnergyRatioSensor`, turns any
+two of those accumulators into the live percentage view of the same split.
 """
 
 from __future__ import annotations
@@ -29,12 +36,12 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import DEFAULT_PERCENTAGE_PRECISION
+from .const import CONF_FLOW_BATTERY, CONF_FLOW_SOLAR, DEFAULT_PERCENTAGE_PRECISION
+from .flows import read_weights, self_fraction, solar_fraction_of_self
 
 _LOGGER = logging.getLogger(__name__)
 
 # Energy deltas above this (kWh) are treated as meter resets / spikes and skipped.
-# Matches the old energy-balancer guard ``0 < diff < 5`` (tighter than the cost one).
 DEFAULT_MAX_DELTA = 5.0
 
 _INVALID = (None, STATE_UNAVAILABLE, STATE_UNKNOWN)
@@ -49,12 +56,12 @@ def _to_float(value) -> float | None:
         return None
 
 
-class SplitPartnerSensor(RestoreSensor):
-    """Passive kWh accumulator, updated only by its balancer via ``add()``.
+class SplitPortionSensor(RestoreSensor):
+    """Passive kWh accumulator, updated only by its splitter via ``add()``.
 
-    Holds one of the two portions (typically the grid remainder). It never tracks
-    the energy source itself — the balancer owns the single atomic computation and
-    pushes the exact remainder here, so the two totals can never drift apart.
+    Holds one portion of the split. It never tracks the energy source itself —
+    the splitter owns the single atomic computation and pushes exact remainders
+    here, so the portions can never drift apart.
     """
 
     _attr_should_poll = False
@@ -90,18 +97,17 @@ class SplitPartnerSensor(RestoreSensor):
 
     @callback
     def add(self, delta: Decimal) -> None:
-        """Add a portion computed by the balancer and publish the new total."""
+        """Add a portion computed by the splitter and publish the new total."""
         self._total += delta
         self.async_write_ha_state()
 
 
-class EnergyBalancerSensor(SplitPartnerSensor):
-    """Primary self-portion accumulator that also drives its grid partner.
+class EnergyFlowSplitter(SplitPortionSensor):
+    """The ``from_self`` accumulator, which also drives every other portion.
 
-    Subscribes once to the hardware energy source. On each valid tick it computes
-    ``self_portion = diff * pct/100`` and ``grid_portion = diff - self_portion``
-    (remainder), adds the self portion to itself and the grid portion to its
-    partner — atomically, from the same ``diff`` and the same percentage read.
+    Subscribes once to the group's energy source. On each valid tick it reads the
+    house flows, splits the delta, and updates itself plus each portion sensor
+    atomically — same delta, same flow reading, one callback.
     """
 
     def __init__(
@@ -110,16 +116,18 @@ class EnergyBalancerSensor(SplitPartnerSensor):
         *,
         slug: str,
         energy_source: str,
-        ratio_source: str,
-        partner: SplitPartnerSensor,
+        flows: dict,
+        grid_portion: SplitPortionSensor,
+        channel_portions: dict[str, SplitPortionSensor],
         icon: str,
         max_delta: float = DEFAULT_MAX_DELTA,
         name: str | None = None,
     ) -> None:
         super().__init__(hass, slug=slug, icon=icon, name=name)
         self._energy_source = energy_source
-        self._ratio_source = ratio_source
-        self._partner = partner
+        self._flows = flows
+        self._grid = grid_portion
+        self._channels = channel_portions
         self._max_delta = max_delta
         self._last_energy: float | None = None
 
@@ -150,25 +158,46 @@ class EnergyBalancerSensor(SplitPartnerSensor):
             # Negative (meter reset), zero, or a spike: don't split it.
             return
 
-        # Percentage unavailable -> worst case all-from-grid (matches the old
-        # template's float(0) default on the ratio source), clamped to 0..100.
-        raw_pct = _to_float(
-            (rs := self.hass.states.get(self._ratio_source)) and rs.state
-        )
-        pct_self = max(0.0, min(100.0, raw_pct if raw_pct is not None else 0.0))
-
         d_diff = Decimal(str(diff))
-        self_portion = d_diff * Decimal(str(pct_self)) / Decimal(100)
+
+        # Flows unreadable -> worst case all-from-grid, so a broken sensor can
+        # never inflate the self share (and with it the claimed savings).
+        weights = read_weights(self.hass, self._flows)
+        frac_self = self_fraction(weights) if weights is not None else 0.0
+
+        self_portion = d_diff * Decimal(str(frac_self))
         grid_portion = d_diff - self_portion  # remainder: self + grid == diff, exactly
 
-        # Atomic update of both totals from the one computation.
         self._total += self_portion
         self.async_write_ha_state()
-        self._partner.add(grid_portion)
+        self._grid.add(grid_portion)
+
+        if not self._channels:
+            return
+
+        solar = self._channels.get(CONF_FLOW_SOLAR)
+        battery = self._channels.get(CONF_FLOW_BATTERY)
+        if solar is not None and battery is not None:
+            frac_solar = solar_fraction_of_self(weights) if weights is not None else 0.0
+            solar_portion = self_portion * Decimal(str(frac_solar))
+            solar.add(solar_portion)
+            # remainder again: solar + battery == self, exactly
+            battery.add(self_portion - solar_portion)
+        elif solar is not None:
+            # Single channel: the whole self share is that channel, by definition.
+            solar.add(self_portion)
+        elif battery is not None:
+            battery.add(self_portion)
 
 
-class SelfSufficiencyRatioSensor(SensorEntity):
-    """Live self-sufficiency % for a cycle: from_self / total * 100."""
+class EnergyRatioSensor(SensorEntity):
+    """Live percentage view of the split: ``numerator / denominator * 100``.
+
+    Used for self-sufficiency (``from_self / total``) and for each portion's
+    share of the total. Reads two accumulators, so it is exact for whatever
+    window they cover — a period meter's closed value gives the energy-weighted
+    share of that period, not an average of instantaneous percentages.
+    """
 
     _attr_should_poll = False
     _attr_native_unit_of_measurement = "%"
@@ -212,11 +241,11 @@ class SelfSufficiencyRatioSensor(SensorEntity):
     @callback
     def _recalculate(self) -> None:
         total = _to_float((s := self.hass.states.get(self._denominator)) and s.state)
-        produced = _to_float((s := self.hass.states.get(self._numerator)) and s.state)
+        portion = _to_float((s := self.hass.states.get(self._numerator)) and s.state)
         # No consumption in the cycle -> undefined (avoid div-by-zero and skewing LTS).
-        if total is None or produced is None or total <= 0:
+        if total is None or portion is None or total <= 0:
             self._attr_available = False
             self._attr_native_value = None
             return
         self._attr_available = True
-        self._attr_native_value = round((produced / total) * 100, 6)
+        self._attr_native_value = round((portion / total) * 100, 6)

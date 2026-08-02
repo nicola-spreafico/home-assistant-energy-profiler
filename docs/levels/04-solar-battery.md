@@ -4,17 +4,23 @@
 
 > *"That washing-machine run was 90% self-sufficient — but was it sunshine, or did it drain the battery I needed for the evening?"*
 
-A second-level split **inside** the self share: how much came straight from the panels versus out of the battery. Only meaningful if you store energy — without a battery, `from_self` is already all solar and this level adds nothing.
+Naming the self share. Level 3 tells you how much energy did not come from the grid; this level tells you what it was made of.
 
-**Prerequisites:** [Level 3](03-self-sufficiency.md). This splits the `from_self` quantity, so it cannot exist without it.
+**Prerequisites:** [Level 3](03-self-sufficiency.md). It qualifies the same self share, so it cannot exist without it.
 
 ## Minimum configuration
+
+One more flow: the battery.
 
 ```yaml
 energy_profiler:
   defaults:
-    self_sufficiency_source: sensor.home_self_sufficiency      # from level 3
-    solar_share_source: sensor.home_solar_share_of_self        # 0-100 %
+    power_flows:
+      load: sensor.house_load_power
+      grid: sensor.grid_import_power
+      battery: sensor.battery_discharge_power   # discharge only, never charge
+      # solar: — derived as load − grid − battery. Declare it instead of `load:`
+      # only if your inverter exposes solar-to-load (not raw production).
 
   devices:
     - name: dishwasher
@@ -22,48 +28,54 @@ energy_profiler:
       energy: sensor.dishwasher_energy
 ```
 
-`solar_share_source` is the share **of the self-consumed energy** that came directly from the panels — the battery is the complement. Provide **exactly one** of `solar_share_source` or `battery_share_source`: they are two spellings of the same split, and the schema rejects both together. Whichever you give drives one side; the other side is computed as the exact remainder.
+The solar contribution is whatever the load is not drawing from the grid or the battery, computed from the same three readings at the same instant. If your inverter *does* expose solar-to-load directly, declare `solar:` instead of `load:` — never both.
 
-```yaml
-template:
-  - sensor:
-      # % OF THE SELF share coming straight from the panels (complement = battery).
-      - name: home_solar_share_of_self
-        unit_of_measurement: "%"
-        state_class: measurement
-        availability: >
-          {{ has_value('sensor.house_load_power') and has_value('sensor.grid_import_power')
-             and has_value('sensor.battery_discharge_power') }}
-        state: >
-          {% set load = states('sensor.house_load_power') | float(0) %}
-          {% set grid = states('sensor.grid_import_power') | float(0) %}
-          {% set batt = states('sensor.battery_discharge_power') | float(0) %}
-          {% set self = load - grid %}
-          {% if self <= 0 %} 100
-          {% else %} {{ ([ [ (self - batt) / self * 100, 0 ] | max, 100 ] | min) | round(1) }}
-          {% endif %}
-```
+`battery` must be **discharge power**. A signed battery sensor that goes negative while charging works (negatives are clamped to zero); one that reports charging as a positive number does not, and would be counted as if it were feeding the house.
 
-(The value rendered while `self <= 0` is irrelevant: the split only consumes the percentage when self energy is actually flowing.)
+## The channels you declare are the channels you get
+
+The flow block decides which entities exist, and nothing is created that would only ever read zero:
+
+| Declared | Channels | `from_self` equals |
+| --- | --- | --- |
+| `load` + `grid` | — | the unqualified self share ([Level 3](03-self-sufficiency.md) only) |
+| `load` + `grid` + `battery` | solar, battery | `from_solar + from_battery` |
+| `grid` + `solar` | solar | `from_solar` |
+| `grid` + `battery` | battery | `from_battery` |
+| `grid` + `solar` + `battery` | solar, battery | `from_solar + from_battery` |
+
+With a single channel, `from_self` and that channel carry the same number. Both still exist: `from_self` is what the monetary view prices and what analytics ask for when the source does not matter, while the channel entity is the one named for what actually happened. What is *not* duplicated is the percentage — with one channel it would be a second copy of self-sufficiency, so it is not created.
+
+### Two channels, named after the common case
+
+The channels are `solar` and `battery`, matching the vocabulary of Home Assistant's own Energy Dashboard, which likewise has a solar section and a battery section and no generic "generation" concept.
+
+If your local production is **wind** rather than photovoltaic, declare it as `solar`: the arithmetic is identical — it is whatever local production reaches the load — and only the entity name reads oddly. The same applies in the Energy Dashboard, so at least the two are consistent.
+
+A fuel-burning **generator is a different matter, and does not belong here**. The monetary view assumes self-production is free: `from_grid_savings` prices the self share at your grid tariff and calls it a saving, meaning "what you would have paid had this come from the grid". Energy from a generator was paid for — in fuel instead of on the bill — so that figure would be overstated, and the real saving is the difference between two costs, which this integration does not model. Sun and wind cost nothing at the margin and fit; a generator does not.
 
 ## What you get
 
 | Entity | Unit | Description |
 | --- | --- | --- |
-| `sensor.<p>_power_from_solar` 💤 | W | Instantaneous watts coming straight from the panels (`power × ss% × share%`) |
-| `sensor.<p>_power_from_battery` 💤 | W | The battery-discharge share — the complement inside self, so `from_solar + from_battery = from_self` |
+| `sensor.<p>_power_from_solar` 💤 | W | Instantaneous watts coming straight from the panels |
+| `sensor.<p>_power_from_battery` 💤 | W | The battery-discharge share, so `from_solar + from_battery = from_self` |
 | `sensor.<p>_energy_from_solar_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | Energy taken directly from the panels |
 | `sensor.<p>_energy_from_battery_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | Energy taken from battery discharge — the exact remainder |
+| `sensor.<p>_energy_from_solar_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | Solar share **of the device total**, as a gauge |
+| `sensor.<p>_energy_from_battery_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | Battery share of the device total |
 
-**Inventory —** with `[daily, monthly, yearly]`: **10 new entities** (47 cumulative).
+**Inventory —** with `[daily, monthly, yearly]` and both channels: **18 new entities** (59 cumulative).
 
 ```
 sensor.<p>_power_from_solar / _power_from_battery
-sensor.<p>_energy_from_solar_lifetime    + _daily / _monthly / _yearly
-sensor.<p>_energy_from_battery_lifetime  + _daily / _monthly / _yearly
+sensor.<p>_energy_from_solar_lifetime               + _daily / _monthly / _yearly
+sensor.<p>_energy_from_battery_lifetime             + _daily / _monthly / _yearly
+sensor.<p>_energy_from_solar_percentage_lifetime    + _daily / _monthly / _yearly
+sensor.<p>_energy_from_battery_percentage_lifetime  + _daily / _monthly / _yearly
 ```
 
-## How the two splits nest
+## How the quantities nest
 
 ```
 total energy
@@ -73,11 +85,15 @@ total energy
     └── from_battery             ← level 4
 ```
 
-Both levels are exact: `from_self + from_grid` = total, and `from_solar + from_battery` = `from_self`. There is no monetary view of this second split — savings and grid cost live at the `from_self`/`from_grid` boundary, since that is where money actually changes hands.
+Both boundaries are exact: `from_self + from_grid` = the total, and `from_solar + from_battery` = `from_self`. Each is guaranteed the same way — one side is computed, the other is the remainder — and all of it happens in a single callback from a single reading of the flows, so the two boundaries can never disagree about the same tick.
+
+The **percentages**, by contrast, are all taken against the device total: `from_grid_percentage`, `from_solar_percentage` and `from_battery_percentage` sum to 100, and self-sufficiency is `from_solar_percentage + from_battery_percentage`. There is no "percentage of self" entity — that quantity only ever existed as a configuration input, and there are no configuration inputs left that are percentages.
+
+There is no monetary view of this split. Savings and grid cost live at the `from_self` / `from_grid` boundary, since that is where money actually changes hands — sun and battery both cost zero, and splitting savings between them would be two entities saying one thing.
 
 ## Milestone: the block is complete
 
-47 entities, and the measurement block is now everything this integration knows how to say about a slice of consumption. **Levels 5 to 7 do not add new kinds of sensor — they replicate this same block over differently-gated slices.** That is the whole mental model, and why a fully-equipped device reaches 177 entities.
+59 entities, and the measurement block is now everything this integration knows how to say about a slice of consumption. **Levels 5 to 7 do not add new kinds of sensor — they replicate this same block over differently-gated slices.** That is the whole mental model, and why a fully-equipped device reaches its final count.
 
 ## Next
 

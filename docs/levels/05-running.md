@@ -57,11 +57,11 @@ Every id below exists twice: as `_lifetime` 💤 ↺ (shown) and as one `_<perio
 | `sensor.<p>_running_energy_from_solar_lifetime` / `…_from_battery_lifetime` | [L4](04-solar-battery.md) | Solar/battery split inside the self share |
 | `sensor.<p>_running_energy_cost_lifetime` | [L2](02-cost.md) | What the running consumption cost |
 | `sensor.<p>_running_energy_from_grid_savings_lifetime` / `…_from_grid_cost_lifetime` | [L2](02-cost.md) + [L3](03-self-sufficiency.md) | Savings and grid cost of the running slice |
-| `sensor.<p>_running_energy_self_sufficiency_lifetime` | [L3](03-self-sufficiency.md) | Self-sufficiency % while running (period meters are gauges) |
+| `sensor.<p>_running_energy_from_self_percentage_lifetime` | [L3](03-self-sufficiency.md) | Self-sufficiency % while running (period meters are gauges) |
 
 Same shape as the total group. The only thing that does **not** reappear here is `_energy_cost_instant_*`: those read raw power, which no gate applies to.
 
-**Inventory —** fully configured, with `[daily, monthly, yearly]`: **38 new entities** (85 cumulative) — the signal, the status label, and 36 for the group.
+**Inventory —** fully configured, with `[daily, monthly, yearly]`: **50 new entities** (109 cumulative) — the signal, the status label, and 48 for the group.
 
 ## Gating is safe by construction
 

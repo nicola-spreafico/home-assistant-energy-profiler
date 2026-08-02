@@ -1,28 +1,42 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Example: self-sufficiency split (solar vs. grid)
+# Example: self-sufficiency split (grid vs. solar vs. battery)
 # Levels 3-4 — see docs/levels/03-self-sufficiency.md and docs/levels/04-solar-battery.md
 # ─────────────────────────────────────────────────────────────────────────────
-# Adds a solar/grid breakdown on top of the basic consumption. A house-wide
-# self-sufficiency percentage entity (0–100 %, e.g. how much of the current draw
-# is covered by PV) is used to split each energy increment into a self-produced
-# and a grid-imported portion.
+# Adds a grid/solar/battery breakdown on top of the basic consumption. You give
+# the house power flows in W — the readings your inverter already publishes —
+# and every energy increment is attributed to them in the proportions the house
+# itself is drawing at that instant. No percentage is ever asked of you: the
+# percentage entities come back out as results.
 #
-# Enabled by providing `self_sufficiency_source`. On top of the energy + cost
-# families it creates (prefix = <name> + name_suffix):
-#   sensor.heat_pump_em_energy_from_self_lifetime      (kWh, solar-covered)
+# Each flow must be a *contribution to the house load*: `grid` is import (not net
+# exchange), `battery` is discharge (not charge), and the solar contribution is
+# derived from `load` as the remainder — which is why `solar:` and `load:` are
+# mutually exclusive. See docs/configuration.md#power-flows-power_flows.
+#
+# On top of the energy + cost families it creates (prefix = <name> + name_suffix):
+#   sensor.heat_pump_em_energy_from_self_lifetime      (kWh, not from the grid)
 #   sensor.heat_pump_em_energy_from_self_{daily,monthly,yearly}
 #   sensor.heat_pump_em_energy_from_grid_lifetime      (kWh, grid-imported)
-#   sensor.heat_pump_em_energy_from_grid_{daily,monthly,yearly}
+#   sensor.heat_pump_em_energy_from_solar_lifetime     (kWh, straight from the panels)
+#   sensor.heat_pump_em_energy_from_battery_lifetime   (kWh, battery discharge)
 #   sensor.heat_pump_em_energy_from_grid_savings_*     (€ saved via PV)      [needs price]
 #   sensor.heat_pump_em_energy_from_grid_cost_*        (€ paid to grid)      [needs price]
-#   sensor.heat_pump_em_energy_self_sufficiency_{daily,monthly,yearly}  (%, live)
+#   sensor.heat_pump_em_energy_self_sufficiency_{daily,monthly,yearly}       (%, gauge)
+#   sensor.heat_pump_em_energy_from_{grid,solar,battery}_percentage_*        (%, gauge)
 # ─────────────────────────────────────────────────────────────────────────────
 
 energy_profiler:
   defaults:
     energy_price: sensor.energy_price_purchase
-    # Instantaneous house self-sufficiency %, shared by all devices:
-    self_sufficiency_source: sensor.home_self_sufficiency_score
+    # The house flows, shared by all devices. Drop `battery:` and you keep the
+    # self/grid split without the solar/battery channels (level 3 only).
+    power_flows:
+      load: sensor.house_load_power
+      grid: sensor.grid_import_power
+      battery: sensor.battery_discharge_power
+      # `solar:` is absent on purpose — it is derived as load − grid − battery.
+      # Declare it (and drop `load:`) only if your inverter exposes solar-to-load
+      # rather than raw production; the two keys are mutually exclusive.
     name_suffix: _em
 
   devices:
@@ -30,9 +44,12 @@ energy_profiler:
       power: sensor.heat_pump_power
       energy: sensor.heat_pump_energy
 
-    # A device may point at a different self-sufficiency source than the default
-    # (e.g. a sub-plant with its own PV metering).
+    # A device may point at different flows than the default (e.g. a sub-plant
+    # with its own PV metering). The block is replaced wholesale, never merged
+    # key by key — a half-inherited block would mix two houses' readings.
     - name: workshop
       power: sensor.workshop_power
       energy: sensor.workshop_energy
-      self_sufficiency_source: sensor.workshop_self_sufficiency_score
+      power_flows:
+        load: sensor.workshop_load_power
+        grid: sensor.workshop_grid_import_power
