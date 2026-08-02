@@ -1,5 +1,6 @@
 {
   "config": {
+    "step": {},
     "abort": {
       "already_configured": "Energy Profiler is already set up.",
       "yaml_only": "Energy Profiler is configured in YAML. Add an `energy_profiler:` block to your configuration and restart Home Assistant; this page is read-only."
