@@ -60,9 +60,13 @@ All cumulative series are backed by [Lean Utility Meter](https://github.com/nico
 
 ## Requirements
 
-Hard dependency on [lean_utility_meter](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter):
-cumulative/cycle sensors reuse its Lean core. Install it first — without it, this
-integration will refuse to set up.
+Hard dependency on [lean_utility_meter](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter)
+**version 1.2.0 or later**: cumulative/cycle sensors reuse its Lean core, and this
+integration builds them through the public API introduced in that release. Install
+it first — without it, this integration will refuse to set up. Home Assistant has
+no way to enforce a version constraint between custom integrations, so an older
+Lean fails at import time with an `ImportError` in the log rather than a clear
+message.
 
 ## Quick Start
 
