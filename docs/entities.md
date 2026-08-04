@@ -57,7 +57,9 @@ Read this table once and it applies to all three groups: substitute `<base>` wit
 | `<base>_cost_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | [L2](levels/02-cost.md) | Cost integrator: each delta priced at the tariff valid *at that moment* |
 | `<base>_from_grid_savings_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | [L2](levels/02-cost.md)+[L3](levels/03-self-sufficiency.md) | What self-production saved (the `from_self` share priced) |
 | `<base>_from_grid_cost_lifetime` 💤 ↺ (+ `_<period>` 🚫) | € | [L2](levels/02-cost.md)+[L3](levels/03-self-sufficiency.md) | What the grid imports actually cost (`from_grid` priced) |
-| `<base>_from_self_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | [L3](levels/03-self-sufficiency.md) | Live ratio `from_self / total`; the period meters snapshot it as a gauge (one long-term point per period) |
+| `<base>_from_self_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | [L3](levels/03-self-sufficiency.md) | `from_self / total`. The `_lifetime` one is all-time; each `_<period>` divides that period's own two meters, written as one long-term point per period |
+| `<base>_from_self_index_<period>` 🚫 | × | [L8](levels/08-prosumption.md) | This device's self-sufficiency ÷ the house's, same period. 1.00 = drew at times indistinguishable from the house. Total group only |
+| `<base>_from_self_advantage_<period>` 🚫 | kWh | [L8](levels/08-prosumption.md) | Self-produced kWh captured beyond running at the house's own times — the quantity the leaderboard ranks by. Total group only |
 | `<base>_from_grid_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | [L3](levels/03-self-sufficiency.md) | The grid's share of the total — the complement of self-sufficiency, as its own gauge |
 | `<base>_from_solar_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | [L4](levels/04-solar-battery.md) | Solar share **of the total**. Only when both channels exist — with one, it would duplicate self-sufficiency |
 | `<base>_from_battery_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | [L4](levels/04-solar-battery.md) | Battery share of the total. Same condition |
@@ -160,6 +162,28 @@ Duration and derived:
 
 Cycle events (`energy_profiler_cycle_completed` / `_cycle_discarded`) and their payload are documented in [Level 7](levels/07-cycles.md#events).
 
+## The system device
+
+House-level entities, all prefixed `sensor.energy_profiler_`. They are not tied to any appliance: some are the readings the per-device attribution is derived from, the rest are the house's own scores from [Level 8](levels/08-prosumption.md).
+
+| Entity | Unit | Unlocked by | Description |
+| --- | --- | --- | --- |
+| `energy_profiler_configuration` 📈 | — | always | Diagnostic: profiled device count, with the declared config in the attributes |
+| `energy_profiler_from_self_percentage` 💤 | % | `power_flows` | The house self share **right now**. Instantaneous — not comparable with the per-device period figures |
+| `energy_profiler_from_grid_percentage` 💤 | % | `power_flows` | The grid's share right now |
+| `energy_profiler_from_solar/battery_percentage` 💤 | % | 2 channels | Each channel's share of the house load right now |
+| `energy_profiler_power_from_solar` (or `_from_self`) 💤 | W | derived solar | The one flow no sensor publishes: `load − grid − battery`, computed here |
+| `energy_profiler_self_energy_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | `energy_flows` | `E_self`: consumption not imported — identically, production not exported |
+| `energy_profiler_consumption_<period>` 🚫 | kWh | `energy_flows` | House consumption per period; the denominator of self-sufficiency |
+| `energy_profiler_production_<period>` 🚫 | kWh | + `production` | House production per period |
+| `energy_profiler_self_sufficiency_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | `energy_flows` | `E_self / consumption` — **the baseline** every per-device comparison divides by |
+| `energy_profiler_self_consumption_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | + `production` | `E_self / production` |
+| `energy_profiler_prosumption_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | + `production` | `E_self / min(consumption, production)` — measured against whichever side was scarce |
+| `energy_profiler_energy_balance` 📈 | kWh | all four | Diagnostic: the two readings of `E_self` must agree; drift means a meter is wrong |
+| `energy_profiler_solar_ranking_<period>` 💤 | — | `energy_flows` | The leaderboard: leading device as state, ordered table in the attributes |
+
+Each `_<period>` score also has a hidden `…_<period>_live` companion. It exists only to give the period meter something to mirror, carries no state class and writes no statistics — see [Level 8 → Recorder](levels/08-prosumption.md#recorder).
+
 ## Totals
 
 Entity count for a fully-configured device with the default `[daily, monthly, yearly]` periods — fewer options, or fewer periods, mean fewer entities:
@@ -171,6 +195,9 @@ Entity count for a fully-configured device with the default `[daily, monthly, ye
 | Standby gatekeeper, duration + standby energy group | 50 | [6](levels/06-standby.md) |
 | Cycle analytics | 54 | [7](levels/07-cycles.md) |
 | Status label | 1 | [5](levels/05-running.md)/[6](levels/06-standby.md) |
-| **Total** | **213** | |
+| Baseline comparison (index + advantage) | 6 | [8](levels/08-prosumption.md) |
+| **Total** | **219** | |
 
-93 of those are fixed and 40 scale with the number of configured periods.
+93 of those are fixed and 46 scale with the number of configured periods.
+
+The house device adds **29 more, once for the whole system** (14 without `production:`), plus the ones `power_flows` already brought.

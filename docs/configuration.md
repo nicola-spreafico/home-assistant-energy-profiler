@@ -14,6 +14,8 @@ Everything lives under a single `energy_profiler:` block: one global `defaults` 
 | `cycle_tracking:` (needs `running:`) | **cycles** family — per-run analytics: completed/live/mean values, counters, events |
 | `standby:` (bool or trigger block) | the standby **signal** (`binary_sensor.<prefix>_standby`) plus the **standby energy group** — same stack, gated on it |
 | `running:` and/or `standby:` | also `sensor.<prefix>_status` — a presentation-only enum label (`running`/`standby`/`poweroff`/`poweron`) for dashboards |
+| `energy_flows:` with `consumption` + `import` | the **house self-sufficiency** and the **baseline**; with `power_flows` too, each device's `index` and `advantage` and the **leaderboard** |
+| `energy_flows:` also with `production` | **self-consumption** and **prosumption** — the two house scores measured against the generation side |
 
 Two vocabulary notes, deliberate and consistent across docs and entities:
 
@@ -32,6 +34,7 @@ Global values inherited by every device that does not override them.
 | --- | --- | --- | --- |
 | `energy_price` | entity id | — | Sensor with the current energy purchase price (€/kWh). Enables the **cost** family for all devices |
 | `power_flows` | mapping | — | The house flows in W the per-device split is derived from. See [Power flows](#power-flows-power_flows) below |
+| `energy_flows` | mapping | — | The house kWh counters the prosumption scores are built from. **No per-device form** — see [Energy flows](#energy-flows-energy_flows) below |
 | `name_suffix` | string | `_em` | Appended to each device `name` to form the entity prefix (`<name><name_suffix>`); useful to namespace the whole fleet |
 | `live_update_interval` | duration | `00:05:00` | Throttle for the Lean meters' live LTS upserts (period boundaries are always written exactly). Passed through to every meter |
 | `periods` | list | `[daily, monthly, yearly]` | Which per-period meters every device gets: `hourly`, `daily`, `weekly`, `monthly`, `bimonthly`, `quarterly`, `yearly` |
@@ -110,6 +113,48 @@ Two shapes are rejected at load time rather than silently resolved, because eith
 Nothing is created that would only ever read zero: no battery flow means no battery entities. With a single channel, `from_self` and that channel hold the same number and both exist — `from_self` is what the monetary view prices, the channel is the one named for what happened — but the channel *percentage* is not created, since it would duplicate self-sufficiency.
 
 If the flows are unreadable at a given tick, the whole delta is attributed to the grid. A broken sensor can understate your self-production; it can never inflate it, nor the savings computed from it.
+
+## Energy flows (`energy_flows:`)
+
+The house **kWh counters**, for [Level 8](levels/08-prosumption.md). A separate block from `power_flows`, and a different kind of input: totals rather than watts, and including the two readings `power_flows` deliberately keeps out — raw production and export.
+
+```yaml
+defaults:
+  energy_flows:
+    consumption: sensor.house_consumption_energy_total   # required
+    import:      sensor.grid_import_energy_total         # required
+    production:  sensor.pv_production_energy_total       # optional
+    export:      sensor.grid_export_energy_total         # optional
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `consumption` | ✔ | Total house consumption, all-time |
+| `import` | ✔ | Energy drawn from the grid, all-time |
+| `production` | | Raw output of the panels, all-time |
+| `export` | | Energy fed into the grid, all-time |
+
+### Why these two are required and those two are not
+
+The house obeys `consumption = production + import − export`, so the self-consumed energy has two equivalent readings:
+
+```
+E_self = consumption − import = production − export
+```
+
+`consumption` and `import` are required because their difference *is* `E_self` and their ratio *is* the baseline. `production` is the only genuinely new denominator, and it unlocks self-consumption and prosumption. `export` adds no information at all — `E_self` is already known without it — so its sole job is the cross-check: with all four declared, `sensor.energy_profiler_energy_balance` publishes how far the two readings disagree, which should be noise around zero.
+
+### What the counters must be
+
+- **Monotonic totals**, not per-period sensors. The integration builds its own meters on your `periods:`; a counter that resets at midnight reads as a broken meter at every rollover.
+- **`import` and `export` separate**, never one signed net figure. A sensor that goes negative on export counts exports as negative imports and corrupts `E_self`.
+- **kWh.** No unit conversion is performed.
+
+### Why it has no per-device form
+
+These are readings of the whole house. A device overriding them would be claiming a second house rather than a different view of this one — so unlike `power_flows`, `energy_flows:` is rejected inside a device block. What a device takes from it is only the *baseline* to be compared against, which is the same for all of them by construction.
+
+Production in particular cannot be split per device at all: the only defensible apportionment makes every appliance score the identical house figure. [Level 8](levels/08-prosumption.md#production-cannot-be-given-to-a-device--and-the-reason-is-not-its-hard) works the algebra.
 
 ## Running detection (`running:`)
 

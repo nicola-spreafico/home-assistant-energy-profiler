@@ -20,6 +20,16 @@ CONF_FLOW_BATTERY = "battery"                          # load covered by battery
 # The channels the self share can be made of, in the order they are presented.
 FLOW_CHANNELS = (CONF_FLOW_SOLAR, CONF_FLOW_BATTERY)
 
+# The house energy meters, in kWh. Where `power_flows` describes the *load side*
+# instant by instant (and can therefore be attributed per device), these are the
+# whole-house counters — including the two, production and export, that have no
+# per-device counterpart and never will. See energy_flows.py.
+CONF_ENERGY_FLOWS = "energy_flows"
+CONF_EFLOW_CONSUMPTION = "consumption"                 # total house consumption (kWh)
+CONF_EFLOW_IMPORT = "import"                           # drawn from the grid (kWh)
+CONF_EFLOW_PRODUCTION = "production"                   # raw output of the panels (kWh)
+CONF_EFLOW_EXPORT = "export"                           # fed into the grid (kWh)
+
 # The house-level device every profiled appliance hangs off (via_device). It
 # carries what is true of the whole system rather than of one appliance: the
 # live shares read from the flows, the derived solar contribution, and the
@@ -65,6 +75,9 @@ DEFAULT_COST_PRECISION = 2
 # either (same gap as MONETARY) and would render the raw state. Not exposed as an
 # option: a tenth of a point is enough for a self-sufficiency reading.
 DEFAULT_PERCENTAGE_PRECISION = 1
+# The index is a multiplier around 1.0, where the second decimal is the
+# difference between "did nothing" and "did slightly better than the house".
+DEFAULT_INDEX_PRECISION = 2
 
 # Feature families. The energy groups (total/running/standby) share one stack
 # builder (families/energy_stack.py); cost and the grid/solar/battery split are

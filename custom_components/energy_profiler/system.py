@@ -41,7 +41,9 @@ from .const import (
     DEFAULT_PERCENTAGE_PRECISION,
     SYSTEM_PREFIX,
 )
+from . import house, ranking
 from .device import entity_label, system_device_info
+from .energy_flows import resolve_energy_flows
 from .flows import read_weights, resolve_flows, self_fraction, source_entities
 
 _LOGGER = logging.getLogger(__name__)
@@ -194,12 +196,24 @@ class ConfigurationSensor(SensorEntity):
 
 
 def build(hass: HomeAssistant, defaults: dict, devices: list) -> list:
-    """Build the house-level entity set from the shared defaults."""
+    """Build the house-level entity set from the shared defaults.
+
+    Returns a mixed list, like the family builders: Entity objects plus Lean
+    meter specs (plain dicts) for the house's own period meters.
+    """
     entities: list = [
         ConfigurationSensor(
             hass, slug=f"{SYSTEM_PREFIX}_configuration", defaults=defaults, devices=devices
         )
     ]
+
+    # Prosumption: the generation-side scores, plus the baseline and the
+    # leaderboard built on it. Independent of `power_flows` — it reads counters,
+    # not the instantaneous split — so it is resolved on its own.
+    energy_flows = resolve_energy_flows(defaults)
+    if energy_flows is not None:
+        entities += house.build(hass, defaults, energy_flows)
+        entities += ranking.build(hass, house.system_meter_device(defaults), devices)
 
     flows = resolve_flows(defaults)
     if flows is None:

@@ -52,7 +52,7 @@ Declaring both `load` and `solar` is rejected by the schema rather than silently
 | --- | --- | --- |
 | `sensor.<p>_energy_from_self_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | Energy covered by self-production: every delta split by the flows valid at that instant |
 | `sensor.<p>_energy_from_grid_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | The grid share — the exact remainder of the same atomic split, so `from_self + from_grid` = the total, always |
-| `sensor.<p>_energy_from_self_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | Live ratio `from_self / total`; the period meters snapshot it as a **gauge** (one long-term point per period, not a cumulative sum) |
+| `sensor.<p>_energy_from_self_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | Self-sufficiency of the device. The `_lifetime` one is the all-time ratio; each `_<period>` divides **that period's own** two meters, so the daily entity is the day's figure and is written as one long-term point per period, not a cumulative sum |
 | `sensor.<p>_energy_from_grid_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | The grid's share of the total — the complement of self-sufficiency, kept as its own entity so a three-slice breakdown needs no template |
 
 **Unlocked together with [Level 2](02-cost.md)** — these need *both* a price and the flows:
@@ -93,9 +93,9 @@ That assumption is exact when the declared flows really are contributions to the
 
 ## Percentages are outputs, never inputs
 
-Nothing in this level asks you for a percentage. Every percentage entity is a ratio of two accumulators, which means a closed period meter reads the **energy-weighted** share of that period.
+Nothing in this level asks you for a percentage. Every percentage entity is a ratio of two accumulators — and each period's entity divides **that period's own** pair, so the daily one reads the energy-weighted share of the day rather than of all time.
 
-That distinction matters more than it looks. Averaging instantaneous percentages over a day would tell you something quite different: a dishwasher drawing 2 kWh at noon on pure sun and 0.05 kWh overnight from the grid averages to roughly 50%, while the honest answer — the share of its energy that was sun — is 97.6%. Only the ratio of the meters answers the question you actually asked.
+That distinction matters more than it looks. Averaging instantaneous percentages over a day would tell you something quite different: a dishwasher drawing 2 kWh at noon on pure sun and 0.05 kWh overnight from the grid averages to roughly 50%, while the honest answer — the share of its energy that was sun — is 97.6%. Only the ratio of the meters answers the question you actually asked. [Level 8](08-prosumption.md#there-is-no-instantaneous-prosumption-to-persist) puts a formula on exactly how far apart the two answers sit, and why the gap *is* the signal.
 
 ## Example
 
@@ -104,3 +104,5 @@ That distinction matters more than it looks. Averaging instantaneous percentages
 ## Next
 
 Do you have a battery, and want to know how much came straight from the panels? → **[Level 4 — Solar vs battery](04-solar-battery.md)**
+
+Want to compare these per-device percentages *fairly* — so that a fridge which cannot be rescheduled is not ranked against a dishwasher which can? → **[Level 8 — Prosumption](08-prosumption.md#part-3--the-leaderboard)**

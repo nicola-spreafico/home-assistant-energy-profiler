@@ -21,6 +21,7 @@ from .const import (
     SYSTEM_DEVICE_NAME,
     CONF_ENERGY_PRICE,
     CONF_POWER_FLOWS,
+    CONF_ENERGY_FLOWS,
     CONF_NAME_SUFFIX,
     CONF_LIVE_UPDATE_INTERVAL,
     CONF_PERIODS,
@@ -104,6 +105,11 @@ def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dic
 
     suffix = defaults.get(CONF_NAME_SUFFIX, "")
     resolved["prefix"] = f"{device[CONF_NAME]}{suffix}"
+
+    # Not inheritable: `energy_flows` is a reading of the whole house, and a
+    # device overriding it would be claiming a second house. What a device needs
+    # to know is only whether the house baseline exists to be compared against.
+    resolved["has_baseline"] = bool(defaults.get(CONF_ENERGY_FLOWS))
 
     resolved["families"] = _enabled_families(resolved)
     return resolved

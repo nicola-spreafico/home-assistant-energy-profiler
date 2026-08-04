@@ -38,13 +38,20 @@ from ..const import (
     CONF_FLOW_SOLAR,
     CONF_POWER,
     DEFAULT_COST_PRECISION,
+    DEFAULT_INDEX_PRECISION,
     DEFAULT_PERCENTAGE_PRECISION,
 )
 from ..flows import resolve_flows
+from ..house import baseline_entity
 from ..instant import INSTANT_COST_PERIODS, InstantCostSensor, resolve_instant_periods
 from ..integrator import EnergyCostIntegratorSensor
 from ..lean import build_period_meters
 from ..lifetime import EnergyLifetimeSensor, GatedEnergyAccumulator
+from ..scores import (
+    BaselineAdvantageSensor,
+    BaselineIndexSensor,
+    build_scored_periods,
+)
 from ..split import EnergyFlowSplitter, EnergyRatioSensor, SplitPortionSensor
 
 ICON_SELF = "mdi:solar-panel"
@@ -53,6 +60,8 @@ ICON_SOLAR = "mdi:weather-sunny"
 ICON_BATTERY = "mdi:home-battery"
 ICON_SAVINGS = "mdi:piggy-bank"
 ICON_GRID_COST = "mdi:cash-minus"
+ICON_INDEX = "mdi:scale-balance"
+ICON_ADVANTAGE = "mdi:sun-clock"
 
 _CHANNEL_ICONS = {CONF_FLOW_SOLAR: ICON_SOLAR, CONF_FLOW_BATTERY: ICON_BATTERY}
 
@@ -205,13 +214,16 @@ def build_stack(
                     )
                 )
 
-    # Percentage views: live ratios, each consolidated to one LTS gauge point per
-    # period (absolute_values + net_consumption: a gauge, not a cumulative sum).
+    # Percentage views. Every one divides two *accumulators*, never averages
+    # instantaneous percentages — the two differ by cov(power, share)/mean(power),
+    # which is precisely the "ran while the sun was up" signal being measured.
     #
-    # Every one of them divides two *accumulators*, never averages instantaneous
-    # percentages: a closed period meter therefore reads the energy-weighted
-    # share of that period, which is the number "how much of yesterday was sun"
-    # actually asks for.
+    # Each period divides *that period's* two meters, not the lifetime pair: a
+    # day's figure has to be built from the day's energies, or a device that ran
+    # at noon and one that ran at 3am produce nearly the same number once a few
+    # months of lifetime totals have accumulated behind them. The live sensors
+    # are hidden and exist to be metered; the Lean gauge keeps the public name
+    # and writes one long-term point per period, holding the closing value.
     if flows is not None:
         ratios = [(f"from_{p}_percentage", f"from_{p}", i) for p, i in (("self", ICON_SELF), ("grid", ICON_GRID))]
         # Per-channel percentages only where they say something new: with a
@@ -224,20 +236,72 @@ def build_stack(
             ]
 
         for suffix, portion, icon in ratios:
-            ratio_lifetime = f"{base}_{suffix}_lifetime"
             entities.append(
                 EnergyRatioSensor(
-                    hass, slug=ratio_lifetime,
+                    hass, slug=f"{base}_{suffix}_lifetime",
                     numerator=f"sensor.{base}_{portion}_lifetime",
                     denominator=f"sensor.{lifetime_slug}",
                     icon=icon,
                 )
             )
-            entities += build_period_meters(
-                hass, device, source=f"sensor.{ratio_lifetime}",
-                name_suffix=f"{name_base}_{suffix}", unit="%", device_class=None,
-                net_consumption=True, absolute_values=True,
-                display_precision=DEFAULT_PERCENTAGE_PRECISION,
+            entities += build_scored_periods(
+                hass, device, name_suffix=f"{name_base}_{suffix}",
+                unit="%", display_precision=DEFAULT_PERCENTAGE_PRECISION,
+                factory=lambda cycle, slug, portion=portion, icon=icon: EnergyRatioSensor(
+                    hass, slug=slug,
+                    numerator=f"sensor.{base}_{portion}_{cycle}",
+                    denominator=f"sensor.{prefix}_{name_base}_{cycle}",
+                    icon=icon, visible=False,
+                ),
             )
 
+    # How this device did against the house over the same period. Needs the
+    # house baseline, so it is built only where `energy_flows:` is declared —
+    # and only on the total group: "did the washing machine run in the sun" is
+    # one question, and asking it again of its standby draw is not a second one.
+    if flows is not None and include_instant and device.get("has_baseline"):
+        entities += _baseline_views(hass, device, base=base, name_base=name_base)
+
+    return entities
+
+
+def _baseline_views(hass, device, *, base: str, name_base: str) -> list:
+    """The two ways of reading this device against the house: index and advantage.
+
+    Both compare like with like — the device's period against the house's *same*
+    period — because the achievable figure moves with the season. 80% self-fed
+    in January, when the house managed 20%, is four times the house; the same
+    80% in July, when the house managed 70%, is barely above it.
+
+    ``index`` is the readable one: 1.0 means the device drew at moments
+    statistically indistinguishable from the house as a whole, which is exactly
+    where a load that cannot be moved belongs — neither rewarded nor blamed.
+
+    ``advantage`` is the rankable one: the same comparison in kWh, so it weighs
+    how much energy the device actually moved and not only how well it timed it.
+    A 5 W lamp on a sunny windowsill scores a spectacular index and an advantage
+    of nothing, which is the honest reading of both. See scores.py.
+    """
+    prefix = device["prefix"]
+    entities = build_scored_periods(
+        hass, device, name_suffix=f"{name_base}_from_self_index",
+        unit="×", display_precision=DEFAULT_INDEX_PRECISION,
+        factory=lambda cycle, slug: BaselineIndexSensor(
+            hass, slug=slug,
+            device_percentage=f"sensor.{base}_from_self_percentage_{cycle}",
+            house_percentage=baseline_entity(cycle),
+            icon=ICON_INDEX, visible=False,
+        ),
+    )
+    entities += build_scored_periods(
+        hass, device, name_suffix=f"{name_base}_from_self_advantage",
+        unit="kWh", display_precision=3,
+        factory=lambda cycle, slug: BaselineAdvantageSensor(
+            hass, slug=slug,
+            from_self=f"sensor.{base}_from_self_{cycle}",
+            total=f"sensor.{prefix}_{name_base}_{cycle}",
+            house_percentage=baseline_entity(cycle),
+            icon=ICON_ADVANTAGE, visible=False,
+        ),
+    )
     return entities

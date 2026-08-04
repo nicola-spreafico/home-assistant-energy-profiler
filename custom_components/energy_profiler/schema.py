@@ -29,6 +29,11 @@ from .const import (
     CONF_FLOW_SOLAR,
     CONF_FLOW_BATTERY,
     FLOW_CHANNELS,
+    CONF_ENERGY_FLOWS,
+    CONF_EFLOW_CONSUMPTION,
+    CONF_EFLOW_IMPORT,
+    CONF_EFLOW_PRODUCTION,
+    CONF_EFLOW_EXPORT,
     CONF_NAME_SUFFIX,
     CONF_LIVE_UPDATE_INTERVAL,
     CONF_PERIODS,
@@ -94,6 +99,26 @@ POWER_FLOWS_SCHEMA = vol.All(
         }
     ),
     _validate_power_flows,
+)
+
+# energy_flows: — the house kWh counters. Deliberately a separate block from
+# `power_flows` rather than more keys inside it: every `power_flows` key is a
+# *contribution to the house load* and they sum to it, an invariant the schema
+# already defends above. Production and export are not contributions to the
+# load, and folding them in would quietly dissolve that meaning.
+#
+# `consumption` + `import` are required because everything else is built on
+# them: their difference is the self-consumed energy, and their ratio is the
+# house baseline every per-device comparison is scored against. `production`
+# unlocks the two scores that look at the generation side; `export` adds only
+# the cross-check, since the self-consumed energy is already known without it.
+ENERGY_FLOWS_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_EFLOW_CONSUMPTION): cv.entity_id,
+        vol.Required(CONF_EFLOW_IMPORT): cv.entity_id,
+        vol.Optional(CONF_EFLOW_PRODUCTION): cv.entity_id,
+        vol.Optional(CONF_EFLOW_EXPORT): cv.entity_id,
+    }
 )
 
 # running: — the detection signal. Two trigger flavors: power threshold or template.
@@ -175,6 +200,10 @@ DEFAULTS_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_ENERGY_PRICE): cv.entity_id,
         vol.Optional(CONF_POWER_FLOWS): POWER_FLOWS_SCHEMA,
+        # Defaults only, with no per-device counterpart: these are readings of
+        # the whole house, and a device overriding them would be claiming a
+        # second house rather than a different view of this one.
+        vol.Optional(CONF_ENERGY_FLOWS): ENERGY_FLOWS_SCHEMA,
         vol.Optional(CONF_NAME_SUFFIX, default=DEFAULT_NAME_SUFFIX): cv.string,
         vol.Optional(CONF_LIVE_UPDATE_INTERVAL): cv.time_period,
         vol.Optional(CONF_PERIODS, default=DEFAULT_PERIODS): vol.All(cv.ensure_list, [PERIOD]),

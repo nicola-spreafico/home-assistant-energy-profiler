@@ -1,0 +1,73 @@
+# Level 8 — Prosumption: the house scores, and a fair per-device leaderboard.
+#
+# Two independent things are configured here, and either works without the other:
+#
+#   power_flows:   watts, the load side  -> per-device solar/grid split (levels 3-4)
+#   energy_flows:  kWh counters, the house -> prosumption + the baseline (level 8)
+#
+# The per-device leaderboard needs BOTH: `power_flows` produces each device's
+# from_self energy, `energy_flows` produces the house baseline it is scored
+# against. With `energy_flows` alone you still get every house score.
+#
+# Full explanation: docs/levels/08-prosumption.md
+
+energy_profiler:
+  defaults:
+    # --- The load side, in W. Feeds the per-device attribution. -------------
+    power_flows:
+      load: sensor.house_load_power
+      grid: sensor.grid_import_power
+      battery: sensor.battery_discharge_power
+
+    # --- The house side, in kWh. Monotonic TOTALS, never daily sensors: the
+    # integration builds its own period meters on `periods:` below, and a
+    # counter that resets at midnight reads as a broken meter. ---------------
+    energy_flows:
+      # Required. Their difference is the self-consumed energy, and their ratio
+      # is the baseline every per-device comparison divides by.
+      consumption: sensor.house_consumption_energy_total
+      import: sensor.grid_import_energy_total
+
+      # Optional. Unlocks self-consumption and prosumption — the two scores
+      # measured against the generation side.
+      production: sensor.pv_production_energy_total
+
+      # Optional. Adds nothing but the cross-check: with all four declared,
+      # (consumption - import) and (production - export) must agree, and
+      # sensor.energy_profiler_energy_balance publishes the disagreement.
+      # A drift that grows means one of the four meters is lying.
+      export: sensor.grid_export_energy_total
+
+    periods: [daily, monthly, yearly]
+
+  devices:
+    # Schedulable: this is the one the leaderboard has something to say about.
+    - name: dishwasher
+      power: sensor.dishwasher_power
+      energy: sensor.dishwasher_energy
+
+    # Big and partly schedulable. Expect a modest index but a large advantage —
+    # 40% of 8 kWh moves far more solar than 90% of 1.5 kWh.
+    - name: heat_pump
+      power: sensor.heat_pump_power
+      energy: sensor.heat_pump_energy
+
+    # Not schedulable at all. It should settle at index 1.00 and advantage 0.00,
+    # which is the point: a load that cannot be moved is neither blamed for
+    # running at night nor credited for running by day.
+    - name: fridge
+      power: sensor.fridge_power
+      energy: sensor.fridge_energy
+
+# What to look at once this is running:
+#
+#   sensor.energy_profiler_prosumption_percentage_daily
+#       How much of yesterday's *achievable* coupling you achieved. Its
+#       complement is the only genuine waste: energy that existed and demand
+#       that existed, which failed to meet because of the hour.
+#
+#   sensor.energy_profiler_solar_ranking_daily
+#       state      = the device that captured the most solar beyond baseline
+#       attributes = the ordered table, plus `unprofiled_advantage_kwh` — what
+#                    everything you have NOT profiled did. A large negative
+#                    figure there is usually the next thing worth measuring.
