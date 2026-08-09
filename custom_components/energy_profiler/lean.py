@@ -16,6 +16,7 @@ The hard `dependencies` entry in the manifest guarantees ``lean_utility_meter``
 is set up first.
 """
 
+from collections.abc import Callable
 from datetime import timedelta
 import logging
 
@@ -43,13 +44,14 @@ def build_period_meters(
     hass: HomeAssistant,
     device: dict,
     *,
-    source: str,
+    source: str | Callable[[str], str],
     name_suffix: str,
     unit: str | None,
     device_class,
     net_consumption: bool = False,
     absolute_values: bool = False,
     display_precision: int | None = None,
+    hidden: bool = False,
 ) -> list[dict]:
     """Return one Lean meter *spec* per requested cycle for a device sub-metric.
 
@@ -60,6 +62,11 @@ def build_period_meters(
 
     ``display_precision`` caps the decimals the meters *show* (None = let the
     device class decide). Meters accumulate at full precision regardless.
+
+    ``source`` is normally one entity every cycle meters. It may instead be a
+    callable ``cycle -> entity_id`` for the case where each cycle has its *own*
+    source: a period score is the ratio of that period's two accumulators, so
+    the daily meter and the monthly one cannot read the same entity.
     """
     prefix = device["prefix"]
     periods = device.get("periods") or ["daily", "monthly", "yearly"]
@@ -72,7 +79,7 @@ def build_period_meters(
             continue
         slug = f"{prefix}_{name_suffix}_{cycle}"
         spec = {
-            "source": source,
+            "source": source(cycle) if callable(source) else source,
             "name": slug,
             "unique_id": slug,
             # Pin the entity_id so it matches the historical snapshot ids
@@ -96,5 +103,10 @@ def build_period_meters(
         # precision when the caller asked for one.
         if display_precision is not None:
             spec["suggested_display_precision"] = display_precision
+        # Registered and fully working, but kept off the device page: for meters
+        # that exist to be a denominator and echo a counter the user already
+        # declared. Read by sensor.py, not by Lean.
+        if hidden:
+            spec["hidden"] = True
         specs.append(spec)
     return specs

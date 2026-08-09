@@ -4,6 +4,23 @@
 
 This integration creates many entities per device, and they are **not all equal** from the recorder's point of view. Getting this section right is what keeps your database small — and, for the period meters, it is a **correctness requirement**, not an optimization.
 
+## First, the reassurance
+
+Over two hundred entities per device sounds like a database catastrophe. It is not, and the arithmetic is worth seeing before the rules below, because it explains why the rules are shaped the way they are.
+
+A period meter writes **one long-term row per closed period** and — excluded from the recorder as documented here — **no state rows at all**. An ordinary utility meter writes one long-term row per *hour*, plus a state row every time its source moves.
+
+Measured on a real fully-equipped device with `[daily, monthly, yearly]`:
+
+| | Long-term rows / year | State rows / year |
+| --- | ---: | ---: |
+| **90 period meters** — an entire device | ~11,300 | **0** |
+| **One ordinary utility meter**, recorded | 8,760 | 100,000+ |
+
+An entire device's ninety meters cost roughly what **one** conventional meter costs in statistics, and nothing at all in state rows. The entity count measures how many questions you can ask; it does not measure what is being written down.
+
+None of that is automatic, though — it is exactly what the rest of this page buys you. Record the period meters by mistake and you get the worst of both: duplicated statistics on two different baselines, and corrupted graphs.
+
 ## The three classes of entities
 
 **1. Period meters — must NOT be recorded.**
@@ -74,6 +91,25 @@ recorder:
 ```
 
 > ⚠️ **Do not include broadly and carve out with exclude.** It is tempting to write `include: entity_globs: [sensor.washing_machine_em_*]` plus an `exclude:` for the meters. It does not work: in Home Assistant's recorder filter, **a match on an include glob wins over the exclude glob**, so the period meters end up recorded anyway. Include narrowly instead, as shown above.
+
+## The system device
+
+The house entities ([Level 8](levels/08-prosumption.md)) follow the same three classes, with two things worth calling out:
+
+- **The hidden `…_<period>_live` helpers.** Each house and baseline score has one. It exists purely to give its period meter a source to mirror, carries no state class and writes no statistics — but the recorder still stores its *states* unless excluded, and it changes as often as the meters it reads.
+- **`sensor.energy_profiler_solar_ranking_<period>` carries the whole leaderboard in its attributes**, and attributes are stored with every state change. Exclude it: each device's own `…_from_self_advantage_<period>` meter already holds the history that matters.
+
+One glob covers the lot, with the diagnostic readmitted explicitly:
+
+```yaml
+recorder:
+  exclude:
+    entity_globs:
+      - sensor.energy_profiler_*
+  include:
+    entities:
+      - sensor.energy_profiler_energy_balance   # 📈 the meters-disagree check
+```
 
 ## Self-check: Repairs
 

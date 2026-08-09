@@ -45,6 +45,25 @@ This one earns its place. When the contribution is computed as `load − grid �
 
 Publishing it makes the flow configuration checkable. Put it on a chart for a day and it should look like a solar curve clipped by your own consumption: flat at zero overnight, rising through the morning, dropping when a big load pulls from the grid. If instead it sits at zero at noon, or tracks your production curve exactly (including what goes to the battery), the declared flows are wrong — and every per-device split is wrong in the same way, silently.
 
+### The prosumption scores
+
+Built from `energy_flows:` ([Level 8](levels/08-prosumption.md)) rather than from the power flows, and unlike everything above they are **per period, not instantaneous** — each divides two energy counters of the same window.
+
+| Entity | Unit | Built when |
+| --- | --- | --- |
+| `sensor.energy_profiler_self_energy_lifetime` (+ `_<period>`) | kWh | `energy_flows` |
+| `sensor.energy_profiler_self_sufficiency_percentage_lifetime` (+ `_<period>`) | % | `energy_flows` |
+| `sensor.energy_profiler_self_consumption_percentage_lifetime` (+ `_<period>`) | % | + `production` |
+| `sensor.energy_profiler_prosumption_percentage_lifetime` (+ `_<period>`) | % | + `production` |
+| `sensor.energy_profiler_energy_balance` | kWh | all four counters |
+| `sensor.energy_profiler_solar_ranking_<period>` | — | `energy_flows` |
+
+Self-sufficiency and self-consumption divide the *same* self-consumed energy by two different denominators, and each is capped by the other side: in winter no behaviour pushes self-sufficiency past `production/consumption`, and in summer the same holds for self-consumption in reverse. Prosumption divides by whichever side was scarce, so it reads as a score of how well the two met **in time** rather than of how the plant is sized.
+
+`sensor.energy_profiler_energy_balance` is the one to glance at first on a new setup: it compares the two independent readings of the self-consumed energy and should sit at noise around zero. A drift that grows means one of the four counters is measuring something else.
+
+The ranking entity's state is the leading device; its attributes hold the ordered table plus `unprofiled_advantage_kwh` — what everything you have *not* profiled did, which is exact because the score is zero-sum across the house.
+
 ### The declared configuration
 
 `sensor.energy_profiler_configuration` is a diagnostic entity: its state is the number of profiled devices, its attributes carry the declared price, periods and flows, which self channels were resolved, and whether solar is derived.

@@ -26,8 +26,8 @@ from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.helpers import entity_registry as er
 
 from . import families, system
-from .const import DOMAIN
-from .device import device_info_for, entity_label
+from .const import DOMAIN, SYSTEM_PREFIX
+from .device import device_info_for, entity_label, system_device_info
 from .lean import LEAN_DOMAIN, lean_available
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,13 +94,12 @@ async def async_setup_entry(
     store = hass.data[DOMAIN]
     devices = store.get("devices", [])
 
-    entities: list = system.build(hass, store.get("defaults", {}), devices)
+    entities: list = []
     specs: list[dict] = []
 
-    for device in devices:
-        info = device_info_for(device)
-        prefix = device["prefix"]
-        for item in families.build_entities(hass, device):
+    def _collect(items, info, prefix: str) -> None:
+        """Sort a builder's mixed output, tagging both kinds with their device."""
+        for item in items:
             if isinstance(item, dict):
                 # A Lean meter spec: tag it with the device and its label before
                 # it is built, so the meter lands on the same page as its own
@@ -115,9 +114,26 @@ async def async_setup_entry(
                 item._attr_name = entity_label(item.entity_id.split(".", 1)[1], prefix)
                 entities.append(item)
 
+    # The house device: its own period meters make its output mixed too, so it
+    # goes through the same path rather than a parallel one.
+    _collect(
+        system.build(hass, store.get("defaults", {}), devices),
+        system_device_info(),
+        SYSTEM_PREFIX,
+    )
+
+    for device in devices:
+        _collect(families.build_entities(hass, device), device_info_for(device), device["prefix"])
+
     # Must run before the meters are added, so the entity ids are free to reclaim.
     _reclaim_meter_registry_entries(hass, specs)
-    entities.extend(meter_from_spec(hass, spec) for spec in specs)
+    for spec in specs:
+        meter = meter_from_spec(hass, spec)
+        if spec.get("hidden"):
+            # Only bites on first registration; a meter already in the registry
+            # keeps whatever visibility it has (the user's choice wins there).
+            meter._attr_entity_registry_visible_default = False
+        entities.append(meter)
     meter_count = len(specs)
 
     _LOGGER.debug(

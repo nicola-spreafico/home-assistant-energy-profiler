@@ -214,6 +214,7 @@ class EnergyRatioSensor(SensorEntity):
         denominator: str,
         icon: str = "mdi:solar-power-variant",
         name: str | None = None,
+        visible: bool = True,
     ) -> None:
         self.hass = hass
         self.entity_id = f"sensor.{slug}"
@@ -223,6 +224,15 @@ class EnergyRatioSensor(SensorEntity):
         self._numerator = numerator
         self._denominator = denominator
         self._attr_native_value = None
+        # Ratios that exist only to feed a period meter are registered but
+        # hidden: the meter carries the name and the history, and showing both
+        # would put two entities with the same number in every picker.
+        self._attr_entity_registry_visible_default = visible
+        if not visible:
+            # And no state class, so the recorder does not build a second
+            # long-term series next to the meter's — same numbers, hourly means
+            # instead of one point per period, and nothing reading it.
+            self._attr_state_class = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -248,4 +258,10 @@ class EnergyRatioSensor(SensorEntity):
             self._attr_native_value = None
             return
         self._attr_available = True
-        self._attr_native_value = round((portion / total) * 100, 6)
+        # Floored at zero. A share is never negative, but the quantities it is
+        # built from can be: the house self-consumed energy is a difference of
+        # two counters that do not tick in lockstep, so overnight — when the
+        # true value is zero — it wanders a few hundredths of a Wh either side.
+        # Publishing that as "-2.3% self-sufficient" would be noise dressed as a
+        # reading, and it propagates into everything scored against it.
+        self._attr_native_value = round(max(0.0, (portion / total) * 100), 6)
