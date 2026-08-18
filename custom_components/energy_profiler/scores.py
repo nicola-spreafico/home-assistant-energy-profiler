@@ -380,6 +380,7 @@ class EnergyBalanceSensor(DeltaCombinationSensor):
     between two installation dates.
     """
 
+    _attr_device_class = None
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_suggested_display_precision = 3
