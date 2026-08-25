@@ -6,7 +6,7 @@ The integration registers `energy_profiler.reset` for the entities it owns direc
 
 ## `energy_profiler.reset`
 
-Zeroes a resettable entity. The idiomatic replacement for the legacy generator's `reset_*` scripts.
+Zeroes a resettable entity.
 
 ```yaml
 action: energy_profiler.reset
@@ -56,7 +56,7 @@ is a **native Lean Utility Meter entity**, with all of Lean's behaviour and self
 | --- | --- |
 | `energy_profiler.thin_history` | retro-clean a series polluted by recorder rows (see [Recorder Setup](recorder.md#what-happens-if-you-get-it-wrong)) |
 | `energy_profiler.calibrate` | set the meter's live value manually |
-| `energy_profiler.import_history` | import consolidated history from another entity (migrations) |
+| `energy_profiler.import_history` | copy consolidated statistics from another entity |
 | `energy_profiler.clear_history` | permanently delete the meter's statistics |
 
 > ⚠️ **Not `lean_utility_meter.thin_history`.** Those services still exist and still serve meters you declared in Lean's own YAML, but they no longer match these entities. An automation written against the Lean domain will silently target nothing.

@@ -178,24 +178,47 @@ Add up those five advantages: **+1.464 kWh**. The rest of the house — 8.28 kWh
 
 Two consequences. First, the leaderboard is a genuine **redistribution** — one appliance's surplus is another's deficit, which is what a ranking ought to be. Second, **the residual is a row worth reading**: it is published as `unprofiled_advantage_kwh` on the ranking entity, and a large negative one says your unmeasured baseline load runs at night. That is usually either the next thing to profile or the next thing to fix.
 
+### Aggregate and overlapping meters must be excluded
+
+The zero-sum interpretation assumes that every ranked row is an independent
+slice of the house load. An aggregate meter breaks that assumption when its
+children are ranked too: adding `upstairs_total` beside the individual upstairs
+appliances counts the same energy twice. The resulting order is distorted and
+the residual no longer has a useful interpretation.
+
+Keep the aggregate for its normal monitoring outputs, but disable its comparison
+layer:
+
+```yaml
+- name: upstairs_total
+  power: sensor.upstairs_total_power
+  energy: sensor.upstairs_total_energy
+  include_in_ranking: false
+```
+
+The device keeps its power, energy, cost and source-attribution entities. It
+does not create `from_self_index` / `from_self_advantage` meters and contributes
+no row to `self_ranking`; the house scores and baseline are unchanged.
+Historical exports must apply the same inclusion rule.
+
 ---
 
 ## What you get
 
-**House scores** — on the system device (`sensor.energy_profiler_…`):
+**House scores** — self-sufficiency, self-consumption and prosumption each live on a dedicated device; their shared counters, balance and ranking remain on **Energy Profiler (system)**. All retain the `sensor.energy_profiler_…` prefix:
 
 | Entity | Unit | Needs | Description |
 | --- | --- | --- | --- |
 | `energy_profiler_self_energy_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | — | `E_self`: consumption not imported, accumulated from signed deltas so a meter reset cannot leak in |
-| `energy_profiler_consumption_<period>` 🚫 | kWh | — | House consumption per period — also the denominator of self-sufficiency |
-| `energy_profiler_production_<period>` 🚫 | kWh | `production` | House production per period |
+| `energy_profiler_consumption_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | — | House consumption observed by the integration — also the denominator of self-sufficiency |
+| `energy_profiler_production_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | `production` | House production observed by the integration — also the denominator of self-consumption and prosumption |
 | `energy_profiler_self_sufficiency_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | — | `E_self / consumption`. **The baseline** every per-device comparison divides by |
 | `energy_profiler_self_consumption_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | `production` | `E_self / production` |
 | `energy_profiler_prosumption_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | `production` | `E_self / min(consumption, production)` — capped at 100 |
 | `energy_profiler_energy_balance` 📈 | kWh | all four | Diagnostic: `(consumption − import) − (production − export)`, which must sit at ~0 |
-| `energy_profiler_solar_ranking_<period>` 💤 | — | — | The leaderboard. State = leading device; attributes carry the ordered table |
+| `energy_profiler_self_ranking_<period>` 💤 | — | — | The leaderboard. State = leading device; attributes carry the ordered table |
 
-**Per device** — only on the total energy group, and only where `energy_flows:` is declared:
+**Per ranked device** — only on the total energy group, where `energy_flows:` is declared and `include_in_ranking` is not `false`:
 
 | Entity | Unit | Description |
 | --- | --- | --- |
@@ -274,7 +297,7 @@ Then that device's self-consumption is:
 self_d / P_d  =  self_d / (P × self_d / E_self)  =  E_self / P
 ```
 
-`self_d` cancels. **Every appliance in the house scores exactly the same number**, the house figure. This is not a crude approximation worth making anyway — it is a quantity with zero information in it. That is why self-consumption and prosumption exist on the system device and nowhere else, and why the per-device half of this level is built out of the *baseline comparison* instead.
+`self_d` cancels. **Every appliance in the house scores exactly the same number**, the house figure. This is not a crude approximation worth making anyway — it is a quantity with zero information in it. That is why self-consumption and prosumption remain global entities, never per-appliance ones, and why the per-device half of this level is built out of the *baseline comparison* instead.
 
 The same fact seen from another angle: the `min()` construct also collapses per device, since `min(consumption_d, production)` is always the device's consumption. Per-device prosumption would be a second copy of per-device self-sufficiency.
 
@@ -287,7 +310,7 @@ Everything on this page follows the usual classes ([Recorder Setup](../recorder.
 Two additions specific to this level:
 
 - **Hidden helper entities.** Each period score has a companion `…_<period>_live` sensor, registered but hidden in the UI. It exists so the period meter has a source to mirror, carries no state class, and writes no statistics. Exclude the `_live` glob from the recorder along with the rest.
-- **The ranking entity carries a table in its attributes.** Attributes are recorded with the state, so leaving `sensor.energy_profiler_solar_ranking_*` recorded will store the whole leaderboard on every change. Exclude it; each device's own `_advantage_<period>` meter already holds the history that matters.
+- **The ranking entity carries a table in its attributes.** Attributes are recorded with the state, so leaving `sensor.energy_profiler_self_ranking_*` recorded will store the whole leaderboard on every change. Exclude it; each device's own `_advantage_<period>` meter already holds the history that matters.
 
 ```yaml
 recorder:
@@ -313,14 +336,14 @@ sensor.energy_profiler_self_sufficiency_percentage_lifetime  + _daily / _monthly
 sensor.energy_profiler_self_consumption_percentage_lifetime  + _daily / _monthly / _yearly
 sensor.energy_profiler_prosumption_percentage_lifetime       + _daily / _monthly / _yearly
 sensor.energy_profiler_energy_balance
-sensor.energy_profiler_solar_ranking_                          _daily / _monthly / _yearly
+sensor.energy_profiler_self_ranking_                           _daily / _monthly / _yearly
 
 per device:
 sensor.<p>_energy_from_self_index_                             _daily / _monthly / _yearly
 sensor.<p>_energy_from_self_advantage_                         _daily / _monthly / _yearly
 ```
 
-**29 house entities** (14 without `production`), plus **6 per profiled device**, plus one hidden `_live` helper behind each period score.
+**29 house entities** (14 without `production`), plus **6 per ranked device**, plus one hidden `_live` helper behind each period score.
 
 ---
 
@@ -331,13 +354,13 @@ The three house scores read best as gauges, and the leaderboard as a markdown ca
 ```yaml
 type: markdown
 content: |
-  {% set r = state_attr('sensor.energy_profiler_solar_ranking_daily', 'ranking') %}
+  {% set r = state_attr('sensor.energy_profiler_self_ranking_daily', 'ranking') %}
   | Device | Advantage | Index |
   |---|---:|---:|
   {% for row in r -%}
   | {{ row.device }} | {{ row.advantage_kwh }} kWh | {{ row.index }}× |
   {% endfor -%}
-  | *unprofiled* | {{ state_attr('sensor.energy_profiler_solar_ranking_daily', 'unprofiled_advantage_kwh') }} kWh | |
+  | *unprofiled* | {{ state_attr('sensor.energy_profiler_self_ranking_daily', 'unprofiled_advantage_kwh') }} kWh | |
 ```
 
 [← Level 7: Cycles](07-cycles.md) · [The levels](../../README.md#the-levels)

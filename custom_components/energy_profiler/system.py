@@ -1,16 +1,9 @@
 """House-level entities: what the flows say about the whole system.
 
-Everything else in this integration is per-appliance. These sensors report the
-house readings the attribution is derived from, on their own device, for two
-reasons:
-
-- **The derived solar contribution is otherwise invisible.** When ``solar`` is
-  computed as ``load - grid - battery``, that number exists only inside the
-  splitter. Publishing it lets you chart it, and — more usefully — check it
-  against reality: if it goes negative-clamped at noon or stays flat on a sunny
-  day, the declared flows are wrong, and every device is being mis-attributed.
-- **The house shares are what you want on a dashboard** next to the per-device
-  ones, without deriving them again in a template.
+Everything else in this integration is per-appliance. These sensors expose the
+global house readings across the system device and three dedicated score
+devices. Only the percentage shares are published from the instantaneous power
+flows; derived power values remain internal to the attribution calculation.
 
 These percentages are **instantaneous** — read from the flows at this moment.
 The per-device ones divide two accumulators, so over a period they are
@@ -23,7 +16,6 @@ from __future__ import annotations
 import logging
 
 from homeassistant.components.sensor import (
-    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
@@ -33,6 +25,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     CONF_ENERGY_PRICE,
+    CONF_BATTERY_AVAILABLE_ENERGY,
     CONF_FLOW_BATTERY,
     CONF_FLOW_GRID,
     CONF_FLOW_SOLAR,
@@ -93,32 +86,6 @@ class _HouseSensor(SensorEntity):
     @callback
     def _recalculate(self) -> None:
         raise NotImplementedError
-
-
-class HouseFlowPowerSensor(_HouseSensor):
-    """One flow's contribution to the house load, in W.
-
-    Only built for the *derived* solar contribution: the flows you declared are
-    already entities you own, and echoing them would add nothing.
-    """
-
-    _attr_device_class = SensorDeviceClass.POWER
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = "W"
-
-    def __init__(self, hass: HomeAssistant, *, slug: str, flows: dict, portion: str, icon: str) -> None:
-        super().__init__(hass, slug=slug, flows=flows, icon=icon)
-        self._portion = portion
-
-    @callback
-    def _recalculate(self) -> None:
-        weights = read_weights(self.hass, self._flows)
-        if weights is None:
-            self._attr_available = False
-            self._attr_native_value = None
-            return
-        self._attr_available = True
-        self._attr_native_value = round(weights.get(self._portion, 0.0), 6)
 
 
 class HouseSharePercentageSensor(_HouseSensor):
@@ -188,6 +155,7 @@ class ConfigurationSensor(SensorEntity):
         return {
             "devices": [device["prefix"] for device in self._devices],
             "energy_price": self._defaults.get(CONF_ENERGY_PRICE),
+            "battery_available_energy": self._defaults.get(CONF_BATTERY_AVAILABLE_ENERGY),
             "periods": self._defaults.get(CONF_PERIODS),
             "power_flows": dict(flows),
             "self_channels": resolved["channels"] if resolved else [],
@@ -195,17 +163,51 @@ class ConfigurationSensor(SensorEntity):
         }
 
 
-def build(hass: HomeAssistant, defaults: dict, devices: list) -> list:
-    """Build the house-level entity set from the shared defaults.
-
-    Returns a mixed list, like the family builders: Entity objects plus Lean
-    meter specs (plain dicts) for the house's own period meters.
-    """
-    entities: list = [
+def build_configuration(hass: HomeAssistant, defaults: dict, devices: list) -> list:
+    """Build the integration-root diagnostic entity."""
+    return [
         ConfigurationSensor(
             hass, slug=f"{SYSTEM_PREFIX}_configuration", defaults=defaults, devices=devices
         )
     ]
+
+
+_SCORE_PREFIXES = {
+    "self_sufficiency": f"{SYSTEM_PREFIX}_self_sufficiency_percentage_",
+    "self_consumption": f"{SYSTEM_PREFIX}_self_consumption_percentage_",
+    "prosumption": f"{SYSTEM_PREFIX}_prosumption_percentage_",
+}
+
+
+def _split_score_devices(items: list) -> dict[str, list]:
+    """Partition global entities by device without changing their identities."""
+    groups = {"system": [], **{name: [] for name in _SCORE_PREFIXES}}
+    for item in items:
+        slug = (
+            item.get("unique_id", "")
+            if isinstance(item, dict)
+            else item.entity_id.split(".", 1)[1]
+        )
+        target = next(
+            (
+                name
+                for name, prefix in _SCORE_PREFIXES.items()
+                if slug.startswith(prefix)
+            ),
+            "system",
+        )
+        groups[target].append(item)
+    return groups
+
+
+def build_house_energy(
+    hass: HomeAssistant, defaults: dict, devices: list
+) -> dict[str, list]:
+    """Build and split global house entities between their device pages.
+
+    Every value is a mixed list of Entity objects and Lean meter specs.
+    """
+    entities: list = []
 
     # Prosumption: the generation-side scores, plus the baseline and the
     # leaderboard built on it. Independent of `power_flows` — it reads counters,
@@ -217,7 +219,7 @@ def build(hass: HomeAssistant, defaults: dict, devices: list) -> list:
 
     flows = resolve_flows(defaults)
     if flows is None:
-        return entities
+        return _split_score_devices(entities)
 
     entities += [
         HouseSharePercentageSensor(
@@ -240,24 +242,4 @@ def build(hass: HomeAssistant, defaults: dict, devices: list) -> list:
             for channel in flows["channels"]
         ]
 
-    # The derived contribution: the one flow nobody else can see, since it is
-    # computed here rather than read from a sensor. Published whenever it is
-    # derived at all — being able to check the number every attribution runs on
-    # is a separate question from whether it has earned a name.
-    #
-    # And the name says only what can be claimed. With a solar channel declared
-    # this *is* the solar contribution; with only `load` and `grid` it is
-    # whatever is not coming from the grid, which may be sun, wind, a battery
-    # that was never declared, or anything else — so it stays `from_self`.
-    if flows["derives_solar"]:
-        qualified = CONF_FLOW_SOLAR in flows["channels"]
-        entities.append(
-            HouseFlowPowerSensor(
-                hass,
-                slug=f"{SYSTEM_PREFIX}_power_from_{CONF_FLOW_SOLAR if qualified else 'self'}",
-                flows=flows, portion=CONF_FLOW_SOLAR,
-                icon=ICON_SOLAR if qualified else ICON_SELF,
-            )
-        )
-
-    return entities
+    return _split_score_devices(entities)

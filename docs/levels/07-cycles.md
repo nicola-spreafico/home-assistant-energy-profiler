@@ -37,6 +37,17 @@ With **limits**, so implausible runs are discarded instead of polluting the mean
 ```
 
 A run outside the limits is recorded as discarded: counters, means and the `_cycle_completed_*` values are all left untouched — only `_cycle_validation_status` moves, so you can see it happened. Its energy still counts in the [running group](05-running.md), which is not cycle-aware.
+### Optional battery coverage
+
+Add a current usable-energy gauge in the shared defaults to ask whether the battery contains at least one observed average cycle:
+
+```yaml
+energy_profiler:
+  defaults:
+    battery_available_energy: sensor.battery_available_energy  # kWh
+```
+
+This is a kWh gauge, not `power_flows.battery` (W), state of charge (%) or a cumulative charge/discharge counter. Prefer an entity that already excludes the inverter's protected reserve.
 
 ## What you get
 
@@ -92,7 +103,15 @@ Which metrics exist scales with the levels you configured:
 | `sensor.<p>_cycle_completed_costovertime` 📈 | €/h | Cost per hour of the last completed cycle ([L2](02-cost.md)) |
 | `sensor.<p>_cycles_costovertime_mean` 📈 | €/h | Average cost per running hour ([L2](02-cost.md)) |
 
-**Inventory —** fully configured, with `[daily, monthly, yearly]`: **54 new entities** (213 cumulative) — 48 fixed plus 2 per period.
+**Battery coverage estimate** (only with `battery_available_energy`):
+
+| Entity | Unit | Description |
+| --- | --- | --- |
+| `binary_sensor.<p>_battery_can_cover_average_cycle` 💤 | — | `on` when current usable battery kWh ≥ `…_cycles_energy_mean`; unavailable until one valid non-zero cycle exists or an input is unreadable |
+
+The attributes expose `battery_available_energy_kwh`, `average_cycle_energy_kwh`, `energy_margin_kwh`, `average_cycles_covered` and `valid_cycles`. The mean uses only valid completed cycles and survives restarts through the existing lifetime total and count. This is an estimate, not an energy reservation: concurrent loads, inverter discharge limits, losses and reserve changes may still require grid energy.
+
+**Inventory —** fully configured, with `[daily, monthly, yearly]`: **55 new entities** (214 cumulative) — 49 fixed plus 2 per period. Without `battery_available_energy`, subtract the one coverage binary sensor.
 
 ## Restarting mid-cycle
 
@@ -126,7 +145,7 @@ cycle_count: 42              # valid cycles so far
 
 ## You are at the end of the path
 
-213 entities on a fully-equipped device, and only a handful of database rows per day — provided the recorder is configured as described in [Recorder Setup](../recorder.md).
+220 entities on a fully-equipped device across all eight levels, and only a handful of database rows per day — provided the recorder is configured as described in [Recorder Setup](../recorder.md).
 
 From here: the [entity reference](../entities.md) for looking anything up, [Configuration](../configuration.md) for every option in detail, and [Services & Actions](../services.md) for `reset` and the Lean maintenance services.
 

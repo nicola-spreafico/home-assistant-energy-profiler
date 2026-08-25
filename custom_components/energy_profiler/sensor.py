@@ -26,8 +26,15 @@ from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.helpers import entity_registry as er
 
 from . import families, system
-from .const import DOMAIN, SYSTEM_PREFIX
-from .device import device_info_for, entity_label, system_device_info
+from .const import CONF_INCLUDE_IN_RANKING, DOMAIN, SYSTEM_PREFIX
+from .device import (
+    device_info_for,
+    entity_label,
+    prosumption_device_info,
+    self_consumption_device_info,
+    self_sufficiency_device_info,
+    system_device_info,
+)
 from .lean import LEAN_DOMAIN, lean_available
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,6 +71,37 @@ def _reclaim_meter_registry_entries(hass: HomeAssistant, specs: list[dict]) -> N
             existing, LEAN_DOMAIN, DOMAIN,
         )
         registry.async_remove(existing)
+
+
+@callback
+def _drop_excluded_ranking_registry_entries(
+    hass: HomeAssistant, devices: list[dict]
+) -> None:
+    """Remove stale comparison entities for devices excluded from ranking.
+
+    Long-term statistics are intentionally left in place. Re-enabling the
+    device recreates the same entity ids and reconnects their history.
+    """
+    registry = er.async_get(hass)
+    for device in devices:
+        if device.get(CONF_INCLUDE_IN_RANKING, True):
+            continue
+        prefix = device["prefix"]
+        for cycle in device.get("periods") or []:
+            for metric in ("index", "advantage"):
+                stem = f"{prefix}_energy_from_self_{metric}_{cycle}"
+                for unique_id in (stem, f"{stem}_live"):
+                    existing = registry.async_get_entity_id(
+                        SENSOR_DOMAIN, DOMAIN, unique_id
+                    )
+                    if existing is None:
+                        continue
+                    _LOGGER.info(
+                        "Removing %s because %s has include_in_ranking: false",
+                        existing,
+                        prefix,
+                    )
+                    registry.async_remove(existing)
 
 
 async def _async_reset(entity, call) -> None:
@@ -114,18 +152,32 @@ async def async_setup_entry(
                 item._attr_name = entity_label(item.entity_id.split(".", 1)[1], prefix)
                 entities.append(item)
 
-    # The house device: its own period meters make its output mixed too, so it
-    # goes through the same path rather than a parallel one.
+    house_groups = system.build_house_energy(
+        hass, store.get("defaults", {}), devices
+    )
+
+    # The integration root keeps configuration and the shared counters/flows.
     _collect(
-        system.build(hass, store.get("defaults", {}), devices),
+        system.build_configuration(hass, store.get("defaults", {}), devices)
+        + house_groups["system"],
         system_device_info(),
         SYSTEM_PREFIX,
     )
+
+    # Each global score family gets its own child device, including its Lean
+    # period meters and hidden live helpers.
+    for key, info in (
+        ("self_sufficiency", self_sufficiency_device_info()),
+        ("self_consumption", self_consumption_device_info()),
+        ("prosumption", prosumption_device_info()),
+    ):
+        _collect(house_groups[key], info, SYSTEM_PREFIX)
 
     for device in devices:
         _collect(families.build_entities(hass, device), device_info_for(device), device["prefix"])
 
     # Must run before the meters are added, so the entity ids are free to reclaim.
+    _drop_excluded_ranking_registry_entries(hass, devices)
     _reclaim_meter_registry_entries(hass, specs)
     for spec in specs:
         meter = meter_from_spec(hass, spec)

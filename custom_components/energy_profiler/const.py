@@ -8,6 +8,7 @@ CONF_DEVICES = "devices"
 
 # Shared defaults (were the generator's "globals")
 CONF_ENERGY_PRICE = "energy_price"                     # energyPriceEntityId
+CONF_BATTERY_AVAILABLE_ENERGY = "battery_available_energy"  # usable energy now (kWh)
 # The house power flows the per-device attribution is derived from. These are
 # *base* readings in W, the ones an inverter/meter integration already exposes —
 # the integration computes the shares itself, so no template is asked of the user.
@@ -30,12 +31,17 @@ CONF_EFLOW_IMPORT = "import"                           # drawn from the grid (kW
 CONF_EFLOW_PRODUCTION = "production"                   # raw output of the panels (kWh)
 CONF_EFLOW_EXPORT = "export"                           # fed into the grid (kWh)
 
-# The house-level device every profiled appliance hangs off (via_device). It
-# carries what is true of the whole system rather than of one appliance: the
-# live shares read from the flows, the derived solar contribution, and the
-# declared configuration.
+# The integration root every profiled appliance hangs off (via_device). Three
+# child devices isolate the global house score families without changing any
+# entity id or unique id.
 SYSTEM_DEVICE_ID = "system"
 SYSTEM_DEVICE_NAME = "Energy Profiler (system)"
+SELF_SUFFICIENCY_DEVICE_ID = "house_energy"  # preserve the existing registry device
+SELF_SUFFICIENCY_DEVICE_NAME = "Energy Profiler (self-sufficiency)"
+SELF_CONSUMPTION_DEVICE_ID = "self_consumption"
+SELF_CONSUMPTION_DEVICE_NAME = "Energy Profiler (self-consumption)"
+PROSUMPTION_DEVICE_ID = "prosumption"
+PROSUMPTION_DEVICE_NAME = "Energy Profiler (prosumption)"
 SYSTEM_PREFIX = "energy_profiler"
 CONF_NAME_SUFFIX = "name_suffix"                       # entitiesPrefixEnd (default "_em")
 CONF_LIVE_UPDATE_INTERVAL = "live_update_interval"
@@ -48,6 +54,7 @@ CONF_NAME = "name"                                     # entitiesPrefix
 CONF_POWER = "power"                                   # powerSensorId
 CONF_ENERGY = "energy"                                 # energySensorId
 CONF_RUNNING = "running"                               # signal: creates binary_sensor _running
+CONF_INCLUDE_IN_RANKING = "include_in_ranking"           # exclude aggregate/overlapping meters
 CONF_CYCLE_TRACKING = "cycle_tracking"                 # consumer: run-cycle analytics (needs running)
 CONF_LIMITS = "limits"                                 # cycle_tracking.limits: min/max duration/energy
 CONF_STANDBY = "standby"                               # signal+consumer: standby energy tracking

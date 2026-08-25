@@ -317,3 +317,112 @@ class TemplateRunningBinarySensor(_RunningBase):
 
 class TemplateStandbyBinarySensor(_StandbyPresentation, TemplateRunningBinarySensor):
     """Standby state (and availability) driven by user templates."""
+
+
+class BatteryCycleCoverageBinarySensor(BinarySensorEntity):
+    """Whether the currently usable battery energy covers one average cycle.
+
+    This is deliberately an estimate based on completed, valid cycles. It does
+    not reserve energy, account for concurrent house loads or model inverter
+    discharge limits.
+    """
+
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        slug: str,
+        battery_energy_source: str,
+        cycle_energy_source: str,
+        cycle_count_source: str,
+    ) -> None:
+        self.hass = hass
+        self.entity_id = f"binary_sensor.{slug}"
+        self._attr_unique_id = slug
+        self._attr_name = slug
+        self._battery_energy_source = battery_energy_source
+        self._cycle_energy_source = cycle_energy_source
+        self._cycle_count_source = cycle_count_source
+        self._battery_kwh: float | None = None
+        self._cycle_kwh: float | None = None
+        self._valid_cycles: int | None = None
+        self._attr_is_on = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_track_state_change_event(
+                self.hass,
+                [
+                    self._battery_energy_source,
+                    self._cycle_energy_source,
+                    self._cycle_count_source,
+                ],
+                self._on_source_change,
+            )
+        )
+        self._recalculate()
+
+    @callback
+    def _on_source_change(self, event: Event) -> None:
+        self._recalculate()
+        self.async_write_ha_state()
+
+    @callback
+    def _recalculate(self) -> None:
+        battery_state = self.hass.states.get(self._battery_energy_source)
+        cycle_state = self.hass.states.get(self._cycle_energy_source)
+        count_state = self.hass.states.get(self._cycle_count_source)
+        battery_kwh = _to_float(battery_state.state if battery_state else None)
+        cycle_kwh = _to_float(cycle_state.state if cycle_state else None)
+        cycle_count = _to_float(count_state.state if count_state else None)
+
+        if (
+            battery_kwh is None
+            or battery_kwh < 0
+            or cycle_kwh is None
+            or cycle_kwh <= 0
+            or cycle_count is None
+            or cycle_count < 1
+        ):
+            self._battery_kwh = None
+            self._cycle_kwh = None
+            self._valid_cycles = None
+            self._attr_available = False
+            self._attr_is_on = None
+            return
+
+        self._battery_kwh = battery_kwh
+        self._cycle_kwh = cycle_kwh
+        self._valid_cycles = int(cycle_count)
+        self._attr_available = True
+        self._attr_is_on = battery_kwh >= cycle_kwh
+
+    @property
+    def icon(self) -> str:
+        if not self._attr_available:
+            return "mdi:battery-unknown"
+        return "mdi:battery-check" if self._attr_is_on else "mdi:battery-alert"
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        if not self._attr_available:
+            return {
+                "battery_energy_source": self._battery_energy_source,
+                "cycle_energy_source": self._cycle_energy_source,
+                "estimate": "mean_of_valid_cycles",
+            }
+        return {
+            "battery_available_energy_kwh": round(self._battery_kwh, 3),
+            "average_cycle_energy_kwh": round(self._cycle_kwh, 3),
+            "energy_margin_kwh": round(self._battery_kwh - self._cycle_kwh, 3),
+            "average_cycles_covered": round(
+                self._battery_kwh / self._cycle_kwh, 2
+            ),
+            "valid_cycles": self._valid_cycles,
+            "battery_energy_source": self._battery_energy_source,
+            "cycle_energy_source": self._cycle_energy_source,
+            "estimate": "mean_of_valid_cycles",
+        }

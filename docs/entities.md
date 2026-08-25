@@ -160,11 +160,19 @@ Duration and derived:
 | `sensor.<p>_cycle_completed_costovertime` 📈 | €/h | Cost per hour of the last completed cycle |
 | `sensor.<p>_cycles_costovertime_mean` 📈 | €/h | Average cost per running hour across all valid cycles |
 
+Battery coverage estimate (only when `battery_available_energy` and cycle tracking are both configured):
+
+| Entity | Unit | Description |
+| --- | --- | --- |
+| `binary_sensor.<p>_battery_can_cover_average_cycle` 💤 | — | `on` when current usable battery kWh cover `…_cycles_energy_mean`. Unavailable without a valid non-zero cycle or readable inputs; attributes include both values, margin, average cycles covered and sample count |
+
 Cycle events (`energy_profiler_cycle_completed` / `_cycle_discarded`) and their payload are documented in [Level 7](levels/07-cycles.md#events).
 
-## The system device
+## The global devices
 
-House-level entities, all prefixed `sensor.energy_profiler_`. They are not tied to any appliance: some are the readings the per-device attribution is derived from, the rest are the house's own scores from [Level 8](levels/08-prosumption.md).
+### Energy Profiler (system)
+
+The integration root owns its diagnostic plus every global house entity except the three percentage families separated below; every appliance and each dedicated score device are attached through `via_device`.
 
 | Entity | Unit | Unlocked by | Description |
 | --- | --- | --- | --- |
@@ -172,15 +180,21 @@ House-level entities, all prefixed `sensor.energy_profiler_`. They are not tied 
 | `energy_profiler_from_self_percentage` 💤 | % | `power_flows` | The house self share **right now**. Instantaneous — not comparable with the per-device period figures |
 | `energy_profiler_from_grid_percentage` 💤 | % | `power_flows` | The grid's share right now |
 | `energy_profiler_from_solar/battery_percentage` 💤 | % | 2 channels | Each channel's share of the house load right now |
-| `energy_profiler_power_from_solar` (or `_from_self`) 💤 | W | derived solar | The one flow no sensor publishes: `load − grid − battery`, computed here |
 | `energy_profiler_self_energy_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | `energy_flows` | `E_self`: consumption not imported — identically, production not exported |
-| `energy_profiler_consumption_<period>` 🚫 | kWh | `energy_flows` | House consumption per period; the denominator of self-sufficiency |
-| `energy_profiler_production_<period>` 🚫 | kWh | + `production` | House production per period |
-| `energy_profiler_self_sufficiency_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | `energy_flows` | `E_self / consumption` — **the baseline** every per-device comparison divides by |
-| `energy_profiler_self_consumption_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | + `production` | `E_self / production` |
-| `energy_profiler_prosumption_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | + `production` | `E_self / min(consumption, production)` — measured against whichever side was scarce |
+| `energy_profiler_consumption_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | `energy_flows` | House consumption observed by the integration; denominator of self-sufficiency and reusable in dashboards |
+| `energy_profiler_production_lifetime` 💤 ↺ (+ `_<period>` 🚫) | kWh | + `production` | House production observed by the integration; denominator of self-consumption/prosumption and reusable in dashboards |
 | `energy_profiler_energy_balance` 📈 | kWh | all four | Diagnostic: the two readings of `E_self` must agree; drift means a meter is wrong |
-| `energy_profiler_solar_ranking_<period>` 💤 | — | `energy_flows` | The leaderboard: leading device as state, ordered table in the attributes |
+| `energy_profiler_self_ranking_<period>` 💤 | — | `energy_flows` | The leaderboard: leading device as state, ordered table in the attributes |
+
+### The three score devices
+
+Each global percentage family is attached to its own dedicated child device:
+
+| Device | Entity | Unit | Unlocked by | Description |
+| --- | --- | --- | --- | --- |
+| **Energy Profiler (self-sufficiency)** | `energy_profiler_self_sufficiency_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | `energy_flows` | `E_self / consumption` — **the baseline** every per-device comparison divides by |
+| **Energy Profiler (self-consumption)** | `energy_profiler_self_consumption_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | + `production` | `E_self / production` |
+| **Energy Profiler (prosumption)** | `energy_profiler_prosumption_percentage_lifetime` 💤 (+ `_<period>` 🚫) | % | + `production` | `E_self / min(consumption, production)` — measured against whichever side was scarce |
 
 Each `_<period>` score also has a hidden `…_<period>_live` companion. It exists only to give the period meter something to mirror, carries no state class and writes no statistics — see [Level 8 → Recorder](levels/08-prosumption.md#recorder).
 
@@ -193,11 +207,11 @@ Entity count for a fully-configured device with the default `[daily, monthly, ye
 | Power + total energy group | 59 | [1](levels/01-energy.md)–[4](levels/04-solar-battery.md) |
 | Running signal + running energy group | 49 | [5](levels/05-running.md) |
 | Standby gatekeeper, duration + standby energy group | 50 | [6](levels/06-standby.md) |
-| Cycle analytics | 54 | [7](levels/07-cycles.md) |
+| Cycle analytics + battery coverage estimate | 55 | [7](levels/07-cycles.md) |
 | Status label | 1 | [5](levels/05-running.md)/[6](levels/06-standby.md) |
 | Baseline comparison (index + advantage) | 6 | [8](levels/08-prosumption.md) |
-| **Total** | **219** | |
+| **Total** | **220** | |
 
-93 of those are fixed and 46 scale with the number of configured periods.
+94 of those are fixed and 46 scale with the number of configured periods. Without `battery_available_energy`, subtract one fixed entity; with `include_in_ranking: false`, omit the six public baseline-comparison meters (and their hidden live helpers).
 
-The house device adds **29 more, once for the whole system** (14 without `production:`), plus the ones `power_flows` already brought.
+The four global devices add **29 more entities altogether, once for the whole system** (14 without `production:`), plus the ones `power_flows` already brought.

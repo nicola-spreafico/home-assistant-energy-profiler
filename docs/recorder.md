@@ -92,12 +92,12 @@ recorder:
 
 > ⚠️ **Do not include broadly and carve out with exclude.** It is tempting to write `include: entity_globs: [sensor.washing_machine_em_*]` plus an `exclude:` for the meters. It does not work: in Home Assistant's recorder filter, **a match on an include glob wins over the exclude glob**, so the period meters end up recorded anyway. Include narrowly instead, as shown above.
 
-## The system device
+## The global system and score devices
 
-The house entities ([Level 8](levels/08-prosumption.md)) follow the same three classes, with two things worth calling out:
+The house entities ([Level 8](levels/08-prosumption.md)) are split across the system and self-sufficiency/self-consumption devices, but follow the same three recorder classes:
 
 - **The hidden `…_<period>_live` helpers.** Each house and baseline score has one. It exists purely to give its period meter a source to mirror, carries no state class and writes no statistics — but the recorder still stores its *states* unless excluded, and it changes as often as the meters it reads.
-- **`sensor.energy_profiler_solar_ranking_<period>` carries the whole leaderboard in its attributes**, and attributes are stored with every state change. Exclude it: each device's own `…_from_self_advantage_<period>` meter already holds the history that matters.
+- **`sensor.energy_profiler_self_ranking_<period>` carries the whole leaderboard in its attributes**, and attributes are stored with every state change. Exclude it: each device's own `…_from_self_advantage_<period>` meter already holds the history that matters.
 
 One glob covers the lot, with the diagnostic readmitted explicitly:
 
