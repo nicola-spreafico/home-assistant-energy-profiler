@@ -8,6 +8,8 @@ Levels 3 and 4 tell you where each appliance's energy **came from**. This level 
 
 **Prerequisites:** none of the other levels, technically — this one reads energy counters rather than the instantaneous flows. In practice it pairs with [Level 3](03-self-sufficiency.md): the per-device half of this level needs the per-device split that Level 3 builds.
 
+> **Home Assistant devices:** house scores stay on their dedicated global devices; per-appliance ranking index and advantage appear on **<name> · Energy**.
+
 ---
 
 ## Part 1 — One energy, two questions

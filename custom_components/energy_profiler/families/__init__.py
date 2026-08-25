@@ -24,14 +24,18 @@ def build_entities(hass, device):
     """Return all sensor-platform entities for a device across its enabled families."""
     entities = []
     for family in device.get("families", []):
-        builder = _BUILDERS.get(family)
-        if builder:
-            entities.extend(builder(hass, device))
-    entities.extend(_build_status(hass, device))
+        entities.extend(build_family_entities(hass, device, family))
+    entities.extend(build_status_entities(hass, device))
     return entities
 
 
-def _build_status(hass, device):
+def build_family_entities(hass, device, family):
+    """Return the sensor-platform entities belonging to one named family."""
+    builder = _BUILDERS.get(family)
+    return builder(hass, device) if builder else []
+
+
+def build_status_entities(hass, device):
     """The ``_status`` dashboard label, when at least one gatekeeper exists.
 
     Presentation-only: derived from the running/standby binary sensors, never
@@ -62,9 +66,26 @@ def build_binary_sensors(hass, device):
     ``running:`` block, whether or not the cycles analytics consume it.
     ``_standby`` follows the ``standby`` option's flavor.
     """
-    entities = []
+    return [
+        entity
+        for entities in build_binary_sensor_groups(hass, device).values()
+        for entity in entities
+    ]
+
+
+def build_binary_sensor_groups(hass, device):
+    """Return binary sensors grouped by the logical device they belong to."""
+    groups = {}
     if device.get(CONF_RUNNING):
-        entities.extend(cycles.build_binary_sensors(hass, device))
+        running_entities = cycles.build_binary_sensors(hass, device)
+        if running_entities:
+            # The first entity is the running gatekeeper; optional following
+            # entities are cycle-readiness analytics.
+            groups[FAMILY_RUNNING] = running_entities[:1]
+            if len(running_entities) > 1:
+                groups[FAMILY_CYCLES] = running_entities[1:]
     if FAMILY_STANDBY in device.get("families", []):
-        entities.extend(standby.build_binary_sensors(hass, device))
-    return entities
+        standby_entities = standby.build_binary_sensors(hass, device)
+        if standby_entities:
+            groups[FAMILY_STANDBY] = standby_entities
+    return groups

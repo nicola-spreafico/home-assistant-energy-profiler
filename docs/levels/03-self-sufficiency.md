@@ -8,6 +8,8 @@ This is the level the integration exists for. House-level dashboards tell you *w
 
 **Prerequisites:** [Level 1](01-energy.md). Combines with [Level 2](02-cost.md) — see [Composition](#composition-with-level-2) below.
 
+> **Home Assistant devices:** live power attribution stays on **<name>**; energy and percentage splits appear on **<name> · Energy** and on any enabled Running or Standby child.
+
 ## Minimum configuration
 
 You give the integration the **house power flows**, in W — the readings your inverter or energy meter already publishes. No percentages, no templates: the shares are computed here.

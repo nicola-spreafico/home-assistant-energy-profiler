@@ -236,7 +236,7 @@ Production in particular cannot be split per device at all: the only defensible 
 
 ## Running detection (`running:`)
 
-A **signal**: declaring it creates `binary_sensor.<prefix>_running` and enables the **running energy group** — the same energy/split/cost stack as the total, accumulated only while running (see [Entity reference](entities.md#the-three-energy-groups), or [Level 5](levels/05-running.md) for the guided version). Other consumers hang on the signal explicitly: [`cycle_tracking:`](#cycle-analytics-cycle_tracking) for run analytics, and the default flavor of [`standby:`](#standby-standby). Unlike the cycles family, the running group counts *every* running moment, validated or not — it is what lets you split running vs standby consumption without tracking cycles.
+A **signal**: declaring it creates `binary_sensor.<prefix>_running` and enables the **running energy group** — the same energy/split/cost stack as the total, accumulated only while running (see the [shared energy block](entities.md#shared-energy-block), or [Level 5](levels/05-running.md) for the guided version). Other consumers hang on the signal explicitly: [`cycle_tracking:`](#cycle-analytics-cycle_tracking) for run analytics, and the default flavor of [`standby:`](#standby-standby). Unlike the cycles family, the running group counts *every* running moment, validated or not — it is what lets you split running vs standby consumption without tracking cycles.
 
 Two trigger flavors:
 

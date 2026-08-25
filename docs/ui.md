@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md)
 
-The integration is configured in YAML, but it is **visible** in the UI: it appears under *Settings → Devices & Services*, with one device per profiled appliance plus four global devices.
+The integration is configured in YAML, but it is **visible** in the UI under *Settings → Devices & Services*. Each profiled appliance has one compact parent device and up to four contextual child devices; house-wide readings use four global devices.
 
 Nothing there is editable. The YAML block stays the single source of truth; the integration entry exists so Home Assistant will let it register devices, which it refuses to do for integrations that have no config entry. That is the only reason it is not a plain YAML integration anymore — opening it offers no options, and the entry itself stores nothing.
 
@@ -10,13 +10,37 @@ Nothing there is editable. The YAML block stays the single source of truth; the 
 
 | Device | What it holds |
 | --- | --- |
-| **Energy Profiler (system)** | Configuration, flows, shared counters, balance and ranking |
+| **Energy Profiler (system)** | Configuration, house flows, shared counters, balance and ranking |
 | **Energy Profiler (self-sufficiency)** | Only the global self-sufficiency percentage family |
 | **Energy Profiler (self-consumption)** | Only the global self-consumption percentage family |
 | **Energy Profiler (prosumption)** | Only the global prosumption percentage family |
-| One per configured appliance | Every entity of that appliance — power, the three energy groups, cycles, and all their period meters |
+| **<name>** | Live power attribution, peak power and status |
+| **<name> · Energy** | Total energy, cost, source percentages, period meters and ranking comparison |
+| **<name> · Running** | Running gatekeeper and running-only energy analytics |
+| **<name> · Cycles** | Per-cycle measurements, means, validation and readiness estimates |
+| **<name> · Standby** | Standby gatekeeper, duration and standby-only energy analytics |
 
-The three score devices and each appliance hang off the system device (`via_device`). Entity IDs, unique IDs and histories are unchanged by this presentation split.
+The three score devices and each appliance parent hang off **Energy Profiler (system)**. The contextual devices hang off their appliance parent through `via_device`. Entity IDs, unique IDs and histories are unchanged by this presentation split.
+
+## Per-appliance device pages
+
+The main **<name>** page is deliberately small. It is the live overview: peak power, the instantaneous self/grid/solar/battery attribution that exists for the configured flows, and the presentation-only status.
+
+**<name> · Energy** is always present. It contains the ungated total-consumption stack:
+
+- lifetime and configured-period energy;
+- cost, savings and grid cost when a price is configured;
+- self/grid and optional solar/battery energy and percentages;
+- instantaneous cost projections;
+- per-period ranking index and advantage when ranking is enabled.
+
+The other children are conditional:
+
+- **<name> · Running** appears with `running:` and contains both its gatekeeper and the full energy stack gated on it.
+- **<name> · Cycles** appears with `cycle_tracking:` and contains snapshots, validation, completed/live/mean measurements, counters, duration, battery coverage and optional battery/Solcast readiness timestamps.
+- **<name> · Standby** appears with `standby:` and contains its gatekeeper, current standby duration and the full energy stack gated on it.
+
+The full entity tables, in this same grouping, are in the [Entity reference](entities.md#per-appliance-device-tree).
 
 ## Energy Profiler (system)
 

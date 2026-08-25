@@ -8,6 +8,8 @@ The top of the path. Everything so far measured *periods*; this measures **indiv
 
 **Prerequisites:** [Level 5](05-running.md) — the analytics consume the running signal. Configuring `cycle_tracking:` without `running:` is skipped with a warning.
 
+> **Home Assistant device:** all cycle analytics and readiness estimates appear on **<name> · Cycles**.
+
 ## Minimum configuration
 
 ```yaml

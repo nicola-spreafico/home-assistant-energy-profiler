@@ -8,6 +8,8 @@ The vampire slice. Same block again, gated on "the device is idle but still draw
 
 **Prerequisites:** [Level 1](01-energy.md). The default flavor also needs [Level 5](05-running.md); the standalone flavors do not.
 
+> **Home Assistant devices:** the gatekeeper, duration and standby-only energy stack appear on **<name> · Standby**; the combined status remains on **<name>**.
+
 ## Minimum configuration
 
 Three flavors. **Default** — standby is simply "running is off":

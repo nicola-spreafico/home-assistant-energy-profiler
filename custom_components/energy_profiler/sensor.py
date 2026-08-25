@@ -26,10 +26,11 @@ from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.helpers import entity_registry as er
 
 from . import families, system
-from .const import CONF_INCLUDE_IN_RANKING, DOMAIN, SYSTEM_PREFIX
+from .const import CONF_INCLUDE_IN_RANKING, DOMAIN, FAMILY_POWER, SYSTEM_PREFIX
 from .device import (
     device_info_for,
     entity_label,
+    family_device_info_for,
     prosumption_device_info,
     self_consumption_device_info,
     self_sufficiency_device_info,
@@ -174,7 +175,20 @@ async def async_setup_entry(
         _collect(house_groups[key], info, SYSTEM_PREFIX)
 
     for device in devices:
-        _collect(families.build_entities(hass, device), device_info_for(device), device["prefix"])
+        prefix = device["prefix"]
+        parent_info = device_info_for(device)
+        for family in device.get("families", []):
+            info = (
+                parent_info
+                if family == FAMILY_POWER
+                else family_device_info_for(device, family)
+            )
+            _collect(
+                families.build_family_entities(hass, device, family),
+                info,
+                prefix,
+            )
+        _collect(families.build_status_entities(hass, device), parent_info, prefix)
 
     # Must run before the meters are added, so the entity ids are free to reclaim.
     _drop_excluded_ranking_registry_entries(hass, devices)

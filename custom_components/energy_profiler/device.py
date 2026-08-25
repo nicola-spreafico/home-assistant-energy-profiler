@@ -142,6 +142,32 @@ def device_info_for(resolved: dict[str, Any]) -> DeviceInfo:
     )
 
 
+_FAMILY_DEVICE_NAMES = {
+    FAMILY_ENERGY: "Energy",
+    FAMILY_RUNNING: "Running",
+    FAMILY_CYCLES: "Cycles",
+    FAMILY_STANDBY: "Standby",
+}
+
+
+def family_device_info_for(resolved: dict[str, Any], family: str) -> DeviceInfo:
+    """Return the logical child device that owns one analytics family.
+
+    Power and the presentation-only status remain on the appliance device. The
+    larger analytical families get their own child devices so Home Assistant's
+    device pages stay navigable. Entity unique ids do not depend on this device
+    identifier, therefore moving them preserves entity ids and recorder history.
+    """
+    family_name = _FAMILY_DEVICE_NAMES[family]
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{resolved['prefix']}:{family}")},
+        name=f"{resolved[CONF_NAME]} · {family_name}",
+        manufacturer="Energy Profiler",
+        model=f"Device profile · {family_name}",
+        via_device=(DOMAIN, resolved["prefix"]),
+    )
+
+
 def build_device_config(device: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
     """Return a fully-resolved device spec: merged config + enabled families + prefix."""
     resolved = dict(device)

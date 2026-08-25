@@ -8,6 +8,8 @@ Add one price sensor and every kWh gets priced **at the tariff valid at the mome
 
 **Prerequisites:** [Level 1](01-energy.md).
 
+> **Home Assistant devices:** total costs and projections appear on **<name> · Energy**; enabled Running and Standby children receive the same cumulative cost sub-block.
+
 ## Minimum configuration
 
 ```yaml

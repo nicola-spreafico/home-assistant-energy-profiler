@@ -8,6 +8,8 @@ The first level on the **other axis**. Levels 1–4 asked *what you can measure*
 
 **Prerequisites:** [Level 1](01-energy.md). Whatever you configured in levels 2–4 is inherited automatically.
 
+> **Home Assistant devices:** the gatekeeper and running-only energy stack appear on **<name> · Running**; the combined status remains on **<name>**.
+
 ## Minimum configuration
 
 Two detection flavors. **Power threshold**, with debounce:

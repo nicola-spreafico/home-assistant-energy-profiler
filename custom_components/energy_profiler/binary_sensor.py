@@ -35,7 +35,7 @@ from homeassistant.helpers.template import result_as_boolean
 
 from . import families
 from .const import DOMAIN
-from .device import device_info_for, entity_label
+from .device import entity_label, family_device_info_for
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,13 +55,18 @@ async def async_setup_entry(hass, entry, async_add_entities):
     """Build the binary sensors for every resolved device."""
     entities = []
     for device in hass.data[DOMAIN].get("devices", []):
-        info = device_info_for(device)
         prefix = device["prefix"]
-        for entity in families.build_binary_sensors(hass, device):
-            entity._attr_device_info = info
-            entity._attr_has_entity_name = True
-            entity._attr_name = entity_label(entity.entity_id.split(".", 1)[1], prefix)
-            entities.append(entity)
+        for family, family_entities in families.build_binary_sensor_groups(
+            hass, device
+        ).items():
+            info = family_device_info_for(device, family)
+            for entity in family_entities:
+                entity._attr_device_info = info
+                entity._attr_has_entity_name = True
+                entity._attr_name = entity_label(
+                    entity.entity_id.split(".", 1)[1], prefix
+                )
+                entities.append(entity)
     async_add_entities(entities)
 
 

@@ -8,6 +8,8 @@ Naming the self share. Level 3 tells you how much energy did not come from the g
 
 **Prerequisites:** [Level 3](03-self-sufficiency.md). It qualifies the same self share, so it cannot exist without it.
 
+> **Home Assistant devices:** solar/battery power attribution stays on **<name>**; the corresponding energy and percentage rows extend the Energy, Running and Standby children that exist.
+
 ## Minimum configuration
 
 One more flow: the battery.

@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md)
 
-**Lookup reference**: you see an entity in Home Assistant and want to know what it is, what unlocked it and how the recorder should treat it. If you are instead learning what the integration can do, follow [the levels](../README.md#the-levels) — this page is deliberately flat and assumes no reading order.
+**Device-oriented lookup reference**: entities are grouped below exactly as they appear on the appliance and child-device pages in Home Assistant. Each table still says what unlocks an entity and how the recorder should treat it. For a guided introduction, follow [the levels](../README.md#the-levels).
 
 ## How entity ids are built
 
@@ -30,19 +30,34 @@ Every entity below carries two markers:
   - 📈 *worth recording* — changes at meaningful moments; its state history is useful
 - **↺ resettable** — supports the `energy_profiler.reset` entity service. The 🚫 period meters are native Lean entities instead, maintained through Lean's own services — see [Services & Actions](services.md).
 
-## The three energy groups
+## Per-appliance device tree
 
-The core of the model: the same sensor block is built three times over differently-gated slices of the consumption.
+Each configured appliance is the parent of up to four contextual child devices. A child exists only when its family is enabled.
 
-| Group | `<base>` | Counts energy… | Exists when | Level |
+| Home Assistant device | Context | Entity families |
+| --- | --- | --- |
+| **<name>** | Live overview | Instantaneous power attribution, peak power and the presentation-only status |
+| **<name> · Energy** | Total consumption | Total energy stack, costs, percentages, period meters and ranking comparisons |
+| **<name> · Running** | Consumption while active | Running gatekeeper and the full running-energy stack |
+| **<name> · Cycles** | Individual appliance runs | Completed/live/mean cycle analytics and battery/solar readiness |
+| **<name> · Standby** | Idle waste | Standby gatekeeper, duration and the full standby-energy stack |
+
+The child devices use `via_device` to point back to **<name>**; the appliance itself points to **Energy Profiler (system)**. This changes presentation only: entity IDs, unique IDs and recorder history are not split or renamed.
+
+
+## Shared energy block
+
+The same sensor block is placed on three different child devices, over differently-gated slices of consumption:
+
+| Child device | `<base>` | Counts energy… | Exists when | Level |
 | --- | --- | --- | --- | --- |
-| **Total** | `<p>_energy` | always — any consumption, whatever the device state | always | [1](levels/01-energy.md) |
-| **Running** | `<p>_running_energy` | only while `binary_sensor.<p>_running` is on | `running:` | [5](levels/05-running.md) |
-| **Standby** | `<p>_standby_energy` | only while `binary_sensor.<p>_standby` is on | `standby:` | [6](levels/06-standby.md) |
+| **<name> · Energy** | `<p>_energy` | always — any consumption, whatever the device state | always | [1](levels/01-energy.md) |
+| **<name> · Running** | `<p>_running_energy` | only while `binary_sensor.<p>_running` is on | `running:` | [5](levels/05-running.md) |
+| **<name> · Standby** | `<p>_standby_energy` | only while `binary_sensor.<p>_standby` is on | `standby:` | [6](levels/06-standby.md) |
 
 The running and standby groups source the **decoupled total lifetime**, so they inherit its reset/plug-swap protection; while their gatekeeper is off *or unavailable* the baseline advances without accumulating, so uncertain periods are never counted. Note the accounting: `total ≈ running + standby + off-residual` only when both gates are configured and never overlap — each group is gated independently, there is no enforced identity.
 
-## The group block
+### Entities repeated in each energy child device
 
 Read this table once and it applies to all three groups: substitute `<base>` with `<p>_energy`, `<p>_running_energy` or `<p>_standby_energy`.
 
@@ -70,9 +85,11 @@ Fully configured, each group is **48 entities** with `[daily, monthly, yearly]`.
 
 **Decimals —** kWh and W rows get their precision from Home Assistant, which derives one from the device class. € and % have no device class default, so the integration supplies one: € shows 2 decimals (configurable via [`cost_precision:`](configuration.md#shared-defaults-defaults)), % shows 1 (fixed). In every case this is display only — the stored state and the long-term statistics keep their full precision, and a precision you set by hand on a single entity overrides it.
 
-## Power
+## Main appliance device
 
-Watts, read straight from the power sensor. Total group only: no gate applies to them.
+### Power and live attribution
+
+Watts, read straight from the configured power sensor. No gate applies to them, so they stay on the main appliance page rather than being repeated on the contextual children.
 
 | Entity | Unit | Unlocked by | Description |
 | --- | --- | --- | --- |
@@ -82,7 +99,17 @@ Watts, read straight from the power sensor. Total group only: no gate applies to
 | `sensor.<p>_power_from_solar` 💤 | W | [L4](levels/04-solar-battery.md) | Watts straight from the panels. Only with a solar channel declared |
 | `sensor.<p>_power_from_battery` 💤 | W | [L4](levels/04-solar-battery.md) | Battery-discharge watts — the complement inside self |
 
-## Instantaneous cost projections
+### Status
+
+| Entity | Unit | Unlocked by | Description |
+| --- | --- | --- | --- |
+| `sensor.<p>_status` 📈 | enum | [L5](levels/05-running.md) or [L6](levels/06-standby.md) | **Presentation-only** dashboard label, never consumed by internal logic. With both signals: `running` > `standby` > `poweroff`; with running only: `running`/`poweroff`; with standby only: `standby`/`poweron`. With the default standby flavor `poweroff` never occurs. Unavailable whenever a configured gatekeeper is unreadable |
+
+## <name> · Energy
+
+This child owns the total energy block above with `<base> = <p>_energy`, including its period meters and the Level 8 index/advantage comparison entities. It also owns the projections below.
+
+### Instantaneous cost projections
 
 Euro per unit of time, not euro spent: *"if the draw held at what it is right now, it would cost this much per hour / day / month / year"*. Derived from the power sensors above and the price, so — like them — total group only.
 
@@ -104,16 +131,26 @@ The two families answer different questions: **without** `_from_grid` you get th
 
 Despite ending in a period name these are **not** period meters — they are instantaneous projections, 💤 rather than 🚫. See [Recorder Setup](recorder.md).
 
-## Gatekeepers and status
+## <name> · Running
+
+Created by `running:`. It contains the running gatekeeper and the shared energy block with `<base> = <p>_running_energy`.
 
 | Entity | Unit | Unlocked by | Description |
 | --- | --- | --- | --- |
 | `binary_sensor.<p>_running` 📈 | — | [L5](levels/05-running.md) | `on` while the appliance runs, per the configured power threshold (with debounce) or template trigger |
+
+The energy entities on this child count every interval for which the gatekeeper is on, independently of whether cycle validation is enabled or succeeds.
+
+## <name> · Standby
+
+Created by `standby:`. It contains the standby gatekeeper, its live duration and the shared energy block with `<base> = <p>_standby_energy`.
+
+| Entity | Unit | Unlocked by | Description |
+| --- | --- | --- | --- |
 | `binary_sensor.<p>_standby` 📈 | — | [L6](levels/06-standby.md) | `on` while in standby, per the configured flavor. In the default flavor it mirrors `…_running` inverted, so recording both is redundant |
 | `sensor.<p>_standby_duration` 💤 | s | [L6](levels/06-standby.md) | How long the current standby stretch has lasted (0 while not in standby) |
-| `sensor.<p>_status` 📈 | enum | [L5](levels/05-running.md) or [L6](levels/06-standby.md) | **Presentation-only** dashboard label, never consumed by internal logic. With both signals: `running` > `standby` > `poweroff`; with running only: `running`/`poweroff`; with standby only: `standby`/`poweron`. With the default standby flavor `poweroff` never occurs. Unavailable whenever a configured gatekeeper is unreadable |
 
-## Cycles
+## <name> · Cycles
 
 All from [Level 7](levels/07-cycles.md). Boundary and engine:
 
@@ -204,14 +241,13 @@ Each `_<period>` score also has a hidden `…_<period>_live` companion. It exist
 
 Entity count for a fully-configured device with the default `[daily, monthly, yearly]` periods — fewer options, or fewer periods, mean fewer entities:
 
-| Block | Entities | Level |
+| Home Assistant device | Entities | Level |
 | --- | --- | --- |
-| Power + total energy group | 59 | [1](levels/01-energy.md)–[4](levels/04-solar-battery.md) |
-| Running signal + running energy group | 49 | [5](levels/05-running.md) |
-| Standby gatekeeper, duration + standby energy group | 50 | [6](levels/06-standby.md) |
-| Cycle analytics + readiness estimates | 57 | [7](levels/07-cycles.md) |
-| Status label | 1 | [5](levels/05-running.md)/[6](levels/06-standby.md) |
-| Baseline comparison (index + advantage) | 6 | [8](levels/08-prosumption.md) |
+| **<name>** — power and status | 6 | [1](levels/01-energy.md), [3](levels/03-self-sufficiency.md)–[6](levels/06-standby.md) |
+| **<name> · Energy** — total energy and baseline comparison | 60 | [1](levels/01-energy.md)–[4](levels/04-solar-battery.md), [8](levels/08-prosumption.md) |
+| **<name> · Running** | 49 | [5](levels/05-running.md) |
+| **<name> · Cycles** | 57 | [7](levels/07-cycles.md) |
+| **<name> · Standby** | 50 | [6](levels/06-standby.md) |
 | **Total** | **222** | |
 
 96 of those are fixed and 46 scale with the number of configured periods. Without `battery_available_energy`, subtract two fixed entities; without `battery_charge_power` or without `solcast_forecast` + `power_flows.load`, subtract the corresponding timestamp. With `include_in_ranking: false`, omit the six public baseline-comparison meters (and their hidden live helpers).

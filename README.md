@@ -77,7 +77,7 @@ Point it at a device's power and energy sensors and it builds the whole analytic
 
 ### The entity count is not the number that matters
 
-A fully-equipped device exposes over two hundred entities, and that alarms people. It should not, because the quantity worth worrying about is **rows in your database**, and the two are barely related.
+A fully-equipped appliance exposes over two hundred entities, but Home Assistant presents them across five contextual device pages — overview, Energy, Running, Cycles and Standby — rather than as one undifferentiated list. The quantity worth worrying about is still **rows in your database**, and the entity count and row count are barely related.
 
 All cumulative series are backed by [Lean Utility Meter](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter). A period meter writes **one consolidated long-term row per closed period** instead of one per hour, and it is kept out of the recorder entirely, so it writes **no state rows at all** — while the dashboards stay live.
 
@@ -123,13 +123,13 @@ energy_profiler:
       energy: sensor.dishwasher_energy
 ```
 
-The configuration stays in YAML, but the result is visible under *Settings → Devices & Services*: one device per appliance, the system device for shared global readings, and three separate score devices for self-sufficiency, self-consumption and prosumption. See [The UI surface](docs/ui.md).
+The configuration stays in YAML, but the result is visible under *Settings → Devices & Services*. Each appliance gets a compact main device plus contextual **Energy**, **Running**, **Cycles** and **Standby** children when those families are enabled. Shared readings remain on the system device and the three dedicated score devices. See [The UI surface](docs/ui.md).
 
 Then configure the recorder — this part is **not optional**: the period meters write their own long-term statistics, and letting the recorder record them too corrupts the series with duplicate rows. [Recorder Setup](docs/recorder.md) tells you exactly what to include or exclude depending on how your system is set up.
 
 ## The levels
 
-A fully-equipped device exposes **222 entities** — which is a lot to meet all at once. So don't: the integration is built as a ladder, and every rung is useful on its own. Each level asks one question about what you already have, and answers with a specific set of sensors. (And the number is not a database problem — see [The entity count is not the number that matters](#the-entity-count-is-not-the-number-that-matters).)
+A fully-equipped appliance exposes **222 entities**, grouped into the same five contextual device pages described above. The integration is also built as a ladder, and every rung is useful on its own: each level asks one question about what you already have and answers with a specific set of sensors. (And the number is not a database problem — see [The entity count is not the number that matters](#the-entity-count-is-not-the-number-that-matters).)
 
 | Level | You have… | You get | New | Total |
 | --- | --- | --- | --- | --- |
@@ -230,10 +230,10 @@ energy_profiler:
 | --- | --- |
 | [Recorder Setup](docs/recorder.md) | **Read this first.** What to exclude/include and why, with ready-made blocks for both exclude-based and include-based (whitelist) systems |
 | [The levels](#the-levels) | The guided path: [1 Energy](docs/levels/01-energy.md) → [2 Cost](docs/levels/02-cost.md) → [3 Self-sufficiency](docs/levels/03-self-sufficiency.md) → [4 Solar vs battery](docs/levels/04-solar-battery.md) → [5 Running](docs/levels/05-running.md) → [6 Standby](docs/levels/06-standby.md) → [7 Cycles](docs/levels/07-cycles.md) → [8 Prosumption](docs/levels/08-prosumption.md). Each page: minimum config and the exact sensors it unlocks |
-| [Entity reference](docs/entities.md) | Flat lookup: you see an entity, you want to know what it is, what unlocked it and how to record it |
+| [Entity reference](docs/entities.md) | Device-oriented lookup grouped exactly like the UI: main appliance, Energy, Running, Cycles and Standby |
 | [Configuration](docs/configuration.md) | Every option, grouped by area: base, shared defaults, running detection, cycle analytics, standby |
 | [Services & Actions](docs/services.md) | `reset` and the entities it supports; which entities are Lean-native meters and answer to Lean's own services |
-| [The UI surface](docs/ui.md) | The device pages: one per appliance, the global system page, and separate self-sufficiency, self-consumption and prosumption pages |
+| [The UI surface](docs/ui.md) | Parent/child appliance pages through `via_device`, plus the system, self-sufficiency, self-consumption and prosumption devices |
 
 ### Examples
 

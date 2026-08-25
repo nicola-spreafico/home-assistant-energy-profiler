@@ -8,6 +8,8 @@ The floor everyone starts from. Two sensors per device, and you get a clean per-
 
 **Prerequisites:** none.
 
+> **Home Assistant devices:** peak power stays on **<name>**; cumulative and period energy appear on **<name> · Energy**.
+
 ## Minimum configuration
 
 ```yaml
