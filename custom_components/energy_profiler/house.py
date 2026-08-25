@@ -129,15 +129,13 @@ def build(hass: HomeAssistant, defaults: dict, flows: dict) -> list:
     #
     # Anchoring both sides at the same moment fixes that, and costs nothing for
     # the period meters, which measure a delta over their window either way.
-    # Production is machinery, consumption is a reading. Both are needed as
-    # denominators, but production echoes a counter the user declared and has
-    # nothing to add to it — the same reason `HouseFlowPowerSensor` is built
-    # only for the *derived* contribution and never for a declared flow. So it
-    # is registered and works, and stays off the device page.
+    # Both denominators are useful period readings in their own right. They are
+    # needed internally by the scores, and remain visible so users may also put
+    # them on dashboards without defining duplicate utility meters.
     denominators: dict[str, str] = {}
     for key, source, visible in (
         ("consumption", consumption, True),
-        ("production", production, False),
+        ("production", production, True),
     ):
         if source is None:
             continue

@@ -20,7 +20,7 @@ and it is additive — which is what makes a leaderboard of it meaningful rather
 than merely ordered.
 
 **The residual is a row too.** The advantage is zero-sum across the whole house,
-so whatever the profiled devices add up to is exactly minus what everything
+so whatever the ranked devices add up to is exactly minus what everything
 unprofiled did. That figure is published alongside the ranking: a large negative
 residual says the house's unmeasured baseline runs at night, which is usually
 either the next thing to profile or the next thing to fix.
@@ -35,7 +35,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import CONF_NAME, SYSTEM_PREFIX
+from .const import CONF_INCLUDE_IN_RANKING, CONF_NAME, SYSTEM_PREFIX
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def _to_float(value) -> float | None:
         return None
 
 
-class SolarRankingSensor(SensorEntity):
+class SelfRankingSensor(SensorEntity):
     """Devices ordered by self-production advantage over one period.
 
     The state is the leader's name, so the entity is readable on its own; the
@@ -157,7 +157,7 @@ class SolarRankingSensor(SensorEntity):
     def _compute_residual(self, rows: list[dict]) -> float | None:
         """Minus the sum of the ranked advantages — what the rest of the house did.
 
-        Exact only when every profiled device reported; a device dropping out
+        Exact only when every ranked device reported; a device dropping out
         would otherwise be silently folded into the remainder and read as a
         fault of the unprofiled load.
         """
@@ -186,12 +186,17 @@ def _round_or_none(value, digits: int) -> float | None:
 
 
 def build(hass: HomeAssistant, device: dict, devices: list[dict]) -> list:
-    """One ranking entity per configured period, over every profiled device."""
+    """One ranking entity per period, over eligible non-aggregate devices."""
+    devices = [
+        item for item in devices if item.get(CONF_INCLUDE_IN_RANKING, True)
+    ]
+    if not devices:
+        return []
     periods = device.get("periods") or []
     return [
-        SolarRankingSensor(
+        SelfRankingSensor(
             hass,
-            slug=f"{SYSTEM_PREFIX}_solar_ranking_{cycle}",
+            slug=f"{SYSTEM_PREFIX}_self_ranking_{cycle}",
             cycle=cycle,
             devices=devices,
             house_self=f"sensor.{SYSTEM_PREFIX}_self_energy_{cycle}",

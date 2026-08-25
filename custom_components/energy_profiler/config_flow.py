@@ -18,7 +18,7 @@ from .const import DOMAIN
 class EnergyProfilerConfigFlow(ConfigFlow, domain=DOMAIN):
     """Single-instance flow whose only real step is the YAML import."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_import(self, import_data: dict | None = None):
         """Create the one entry that backs the whole YAML configuration."""

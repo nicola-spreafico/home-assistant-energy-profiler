@@ -15,6 +15,8 @@ energy_profiler:
       load: sensor.house_load_power
       grid: sensor.grid_import_power
       battery: sensor.battery_discharge_power
+    # Current usable battery energy, in kWh; enables average-cycle coverage.
+    battery_available_energy: sensor.battery_available_energy
     name_suffix: _em
     # Throttle live LTS updates fleet-wide (fewer upserts/hour than the 5-min
     # default; period boundaries are still written exactly).
@@ -69,3 +71,10 @@ energy_profiler:
         trigger: power
         on_below: 8
         off_above: 12
+
+    # 6) Aggregate measurement: useful normally, excluded only from comparisons
+    #    because it overlaps the individual devices above.
+    - name: upstairs_total
+      power: sensor.upstairs_total_power
+      energy: sensor.upstairs_total_energy
+      include_in_ranking: false

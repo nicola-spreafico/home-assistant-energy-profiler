@@ -19,7 +19,14 @@ from .const import (
     DOMAIN,
     SYSTEM_DEVICE_ID,
     SYSTEM_DEVICE_NAME,
+    SELF_SUFFICIENCY_DEVICE_ID,
+    SELF_SUFFICIENCY_DEVICE_NAME,
+    SELF_CONSUMPTION_DEVICE_ID,
+    SELF_CONSUMPTION_DEVICE_NAME,
+    PROSUMPTION_DEVICE_ID,
+    PROSUMPTION_DEVICE_NAME,
     CONF_ENERGY_PRICE,
+    CONF_BATTERY_AVAILABLE_ENERGY,
     CONF_POWER_FLOWS,
     CONF_ENERGY_FLOWS,
     CONF_NAME_SUFFIX,
@@ -43,6 +50,7 @@ _LOGGER = logging.getLogger(__name__)
 # Keys that a device may override from `defaults`.
 _INHERITABLE = (
     CONF_ENERGY_PRICE,
+    CONF_BATTERY_AVAILABLE_ENERGY,
     CONF_POWER_FLOWS,
     CONF_LIVE_UPDATE_INTERVAL,
     CONF_PERIODS,
@@ -70,13 +78,48 @@ def entity_label(slug: str, prefix: str) -> str:
 
 
 def system_device_info() -> DeviceInfo:
-    """The one house-level device: shared readings, not tied to any appliance."""
+    """The integration root device: configuration and appliance parent."""
     return DeviceInfo(
         identifiers={(DOMAIN, SYSTEM_DEVICE_ID)},
         name=SYSTEM_DEVICE_NAME,
         manufacturer="Energy Profiler",
-        model="House flows",
+        model="Integration system",
         entry_type=None,
+    )
+
+
+def _house_score_device_info(identifier: str, name: str, model: str) -> DeviceInfo:
+    """Build one house-only score device under the integration root."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, identifier)},
+        name=name,
+        manufacturer="Energy Profiler",
+        model=model,
+        via_device=(DOMAIN, SYSTEM_DEVICE_ID),
+    )
+
+
+def self_sufficiency_device_info() -> DeviceInfo:
+    return _house_score_device_info(
+        SELF_SUFFICIENCY_DEVICE_ID,
+        SELF_SUFFICIENCY_DEVICE_NAME,
+        "House self-sufficiency",
+    )
+
+
+def self_consumption_device_info() -> DeviceInfo:
+    return _house_score_device_info(
+        SELF_CONSUMPTION_DEVICE_ID,
+        SELF_CONSUMPTION_DEVICE_NAME,
+        "House self-consumption",
+    )
+
+
+def prosumption_device_info() -> DeviceInfo:
+    return _house_score_device_info(
+        PROSUMPTION_DEVICE_ID,
+        PROSUMPTION_DEVICE_NAME,
+        "House prosumption",
     )
 
 

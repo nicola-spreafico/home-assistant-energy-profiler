@@ -23,6 +23,7 @@ from .const import (
     CONF_DEFAULTS,
     CONF_DEVICES,
     CONF_ENERGY_PRICE,
+    CONF_BATTERY_AVAILABLE_ENERGY,
     CONF_POWER_FLOWS,
     CONF_FLOW_LOAD,
     CONF_FLOW_GRID,
@@ -43,6 +44,7 @@ from .const import (
     CONF_POWER,
     CONF_ENERGY,
     CONF_RUNNING,
+    CONF_INCLUDE_IN_RANKING,
     CONF_CYCLE_TRACKING,
     CONF_LIMITS,
     CONF_STANDBY,
@@ -199,6 +201,9 @@ CYCLE_TRACKING_SCHEMA = vol.All(
 DEFAULTS_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_ENERGY_PRICE): cv.entity_id,
+        # Current usable battery energy (kWh), a gauge rather than a cumulative
+        # flow. Cycle analytics compare it with their observed mean energy.
+        vol.Optional(CONF_BATTERY_AVAILABLE_ENERGY): cv.entity_id,
         vol.Optional(CONF_POWER_FLOWS): POWER_FLOWS_SCHEMA,
         # Defaults only, with no per-device counterpart: these are readings of
         # the whole house, and a device overriding them would be claiming a
@@ -225,6 +230,7 @@ DEVICE_SCHEMA = vol.Schema(
         # Per-device overrides of the shared defaults. `null` explicitly opts the
         # device out of the corresponding family even when a default is set.
         vol.Optional(CONF_ENERGY_PRICE): vol.Any(None, cv.entity_id),
+        vol.Optional(CONF_BATTERY_AVAILABLE_ENERGY): vol.Any(None, cv.entity_id),
         # Replaced wholesale, never merged key-by-key: a half-inherited flow block
         # would mix two houses' readings. `null` opts the device out of the split.
         vol.Optional(CONF_POWER_FLOWS): vol.Any(None, POWER_FLOWS_SCHEMA),
@@ -234,6 +240,7 @@ DEVICE_SCHEMA = vol.Schema(
         vol.Optional(CONF_COST_PRECISION): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=10)
         ),
+        vol.Optional(CONF_INCLUDE_IN_RANKING, default=True): cv.boolean,
         # Signals and their consumers.
         vol.Optional(CONF_RUNNING): RUNNING_SCHEMA,
         vol.Optional(CONF_CYCLE_TRACKING): CYCLE_TRACKING_SCHEMA,

@@ -37,6 +37,7 @@ from ..const import (
     CONF_FLOW_BATTERY,
     CONF_FLOW_SOLAR,
     CONF_POWER,
+    CONF_INCLUDE_IN_RANKING,
     DEFAULT_COST_PRECISION,
     DEFAULT_INDEX_PRECISION,
     DEFAULT_PERCENTAGE_PRECISION,
@@ -259,7 +260,12 @@ def build_stack(
     # house baseline, so it is built only where `energy_flows:` is declared —
     # and only on the total group: "did the washing machine run in the sun" is
     # one question, and asking it again of its standby draw is not a second one.
-    if flows is not None and include_instant and device.get("has_baseline"):
+    if (
+        flows is not None
+        and include_instant
+        and device.get("has_baseline")
+        and device.get(CONF_INCLUDE_IN_RANKING, True)
+    ):
         entities += _baseline_views(hass, device, base=base, name_base=name_base)
 
     return entities

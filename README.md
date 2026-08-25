@@ -30,6 +30,9 @@ That is a deliberate order of priorities, and it rests on one asymmetry: **prese
 > the sun, or did it silently pull half of its load from the grid — and what
 > did it cost you?"*
 
+> *"Does the battery contain enough usable energy to run one average
+> dishwasher cycle without needing the grid?"*
+
 > *"How much money does the TV burn per year just sitting in standby, and is
 > the bedroom A/C running longer per cycle than it used to?"*
 
@@ -88,12 +91,9 @@ So the honest way to read the entity count is: it is the number of *questions yo
 ## Requirements
 
 Hard dependency on [lean_utility_meter](https://github.com/nicola-spreafico/home-assistant-lean-utility-meter)
-**version 1.2.0 or later**: cumulative/cycle sensors reuse its Lean core, and this
-integration builds them through the public API introduced in that release. Install
-it first — without it, this integration will refuse to set up. Home Assistant has
-no way to enforce a version constraint between custom integrations, so an older
-Lean fails at import time with an `ImportError` in the log rather than a clear
-message.
+**version 1.2.0 or later**. It supplies the period-meter core and public builder
+API used by this integration. Install it first; without it, Energy Profiler does
+not set up.
 
 ## Quick Start
 
@@ -113,13 +113,13 @@ energy_profiler:
       energy: sensor.dishwasher_energy
 ```
 
-The configuration stays in YAML, but the result is visible under *Settings → Devices & Services*: one device per appliance, plus a system device carrying the live house shares and the derived solar contribution. See [The UI surface](docs/ui.md).
+The configuration stays in YAML, but the result is visible under *Settings → Devices & Services*: one device per appliance, the system device for shared global readings, and three separate score devices for self-sufficiency, self-consumption and prosumption. See [The UI surface](docs/ui.md).
 
 Then configure the recorder — this part is **not optional**: the period meters write their own long-term statistics, and letting the recorder record them too corrupts the series with duplicate rows. [Recorder Setup](docs/recorder.md) tells you exactly what to include or exclude depending on how your system is set up.
 
 ## The levels
 
-A fully-equipped device exposes **219 entities** — which is a lot to meet all at once. So don't: the integration is built as a ladder, and every rung is useful on its own. Each level asks one question about what you already have, and answers with a specific set of sensors. (And the number is not a database problem — see [The entity count is not the number that matters](#the-entity-count-is-not-the-number-that-matters).)
+A fully-equipped device exposes **220 entities** — which is a lot to meet all at once. So don't: the integration is built as a ladder, and every rung is useful on its own. Each level asks one question about what you already have, and answers with a specific set of sensors. (And the number is not a database problem — see [The entity count is not the number that matters](#the-entity-count-is-not-the-number-that-matters).)
 
 | Level | You have… | You get | New | Total |
 | --- | --- | --- | --- | --- |
@@ -129,14 +129,14 @@ A fully-equipped device exposes **219 entities** — which is a lot to meet all 
 | **[4 — Solar vs battery](docs/levels/04-solar-battery.md)** | …and the battery discharge flow | how much was sunshine, how much was the battery | 18 | 59 |
 | **[5 — Running](docs/levels/05-running.md)** | a way to tell "on" from "off" | the whole block again, over running time only | 50 | 109 |
 | **[6 — Standby](docs/levels/06-standby.md)** | a way to spot idle draw | the whole block again, over vampire waste | 50 | 159 |
-| **[7 — Cycles](docs/levels/07-cycles.md)** | appliances that run in cycles | per-run energy, cost and solar share, with events | 54 | 213 |
-| **[8 — Prosumption](docs/levels/08-prosumption.md)** | the house energy counters | how well production and consumption met, and a fair per-device leaderboard | 6 (+29 house) | 219 |
+| **[7 — Cycles](docs/levels/07-cycles.md)** | appliances that run in cycles | per-run energy, cost and solar share, plus battery coverage | 55 | 214 |
+| **[8 — Prosumption](docs/levels/08-prosumption.md)** | the house energy counters | how well production and consumption met, and a fair per-device leaderboard | 6 (+29 house) | 220 |
 
 Counts assume the default `periods: [daily, monthly, yearly]` and every optional source configured; fewer options mean fewer entities. Level 8 is the only one whose count is mostly *house* entities rather than per-device ones — see below.
 
 **Levels 1–4 ask what you can measure.** Each optional source adds a sub-block: a price brings cost, the house grid and load flows bring the solar/grid split, a battery flow splits that again into panels versus battery. They also compose — a price *and* the flows together unlock savings and grid cost, which neither gives alone.
 
-**Levels 5–7 ask which slice you measure it over.** They add no new kind of sensor: they replicate the block you already built over a gated slice of the consumption. Teach the integration to tell running from idle and you get the same energy, cost and solar breakdown for running time and for standby waste, separately. That multiplication is exactly why the total reaches 213 — and why it is far less to learn than the number suggests.
+**Levels 5–7 ask which slice you measure it over.** They mostly replicate the block you already built over a gated slice of the consumption. Teach the integration to tell running from idle and you get the same energy, cost and solar breakdown for running time and for standby waste, separately. For cycle-tracked appliances, an optional usable-battery-energy gauge also answers whether the battery currently contains at least one observed average cycle. That multiplication is exactly why the total reaches 214 — and why it is far less to learn than the number suggests.
 
 **Level 8 turns the question around.** Levels 1–7 all look at where an appliance's energy came *from*. Level 8 looks at what happened to the energy you *produced* — a question that only exists at house level, since no appliance has a production of its own. It reads energy counters rather than the instantaneous flows, so it stands alone: you can have it without any of the others. What it gives back to the devices is a **baseline**, and with it the one thing per-device percentages cannot deliver on their own — a leaderboard that is fair to appliances which cannot be rescheduled.
 
@@ -188,6 +188,7 @@ energy_profiler:
       load: sensor.house_load_power
       grid: sensor.grid_import_power
       battery: sensor.battery_discharge_power
+    battery_available_energy: sensor.battery_available_energy  # current usable kWh; cycle estimate
     energy_flows:                                # level 8: prosumption + leaderboard
       consumption: sensor.house_consumption_energy_total
       import: sensor.grid_import_energy_total
@@ -218,7 +219,7 @@ energy_profiler:
 | [Entity reference](docs/entities.md) | Flat lookup: you see an entity, you want to know what it is, what unlocked it and how to record it |
 | [Configuration](docs/configuration.md) | Every option, grouped by area: base, shared defaults, running detection, cycle analytics, standby |
 | [Services & Actions](docs/services.md) | `reset` and the entities it supports; which entities are Lean-native meters and answer to Lean's own services |
-| [The UI surface](docs/ui.md) | The device pages: one per appliance plus a system device with the live house shares, the derived solar contribution, and the declared configuration |
+| [The UI surface](docs/ui.md) | The device pages: one per appliance, the global system page, and separate self-sufficiency, self-consumption and prosumption pages |
 
 ### Examples
 
@@ -236,7 +237,7 @@ Focused configurations in the `examples/` directory:
 ## Services
 
 - `energy_profiler.reset` — zero a resettable entity (lifetime accumulators, cycle counters, peak power); no-op on entities with nothing to reset
-- The per-period meters are **native Lean entities**, so Lean's own services (`lean_utility_meter.thin_history`, `import_history`, `clear_history`, `calibrate`) target them directly
+- The per-period meters use Lean's implementation and expose its maintenance actions under the `energy_profiler` domain: `thin_history`, `import_history`, `clear_history`, `calibrate`
 
 Details and the full entity lists in [Services & Actions](docs/services.md).
 
@@ -244,10 +245,5 @@ The cycles family also fires `energy_profiler_cycle_completed` / `_cycle_discard
 
 ## Status
 
-🚧 Pilot phase. All families are implemented (**power**, **energy**, **cost**, **self-sufficiency**, **cycles**, **standby**, **prosumption**) and running in parallel with the legacy generator on a pilot device.
-
-**Fixed in 2.1.0:** the `…_from_self_percentage_<period>` meters mirrored the *lifetime* ratio instead of the period's own, so a daily figure barely moved from one day to the next and could not distinguish a device that ran at noon from one that ran at 3am. They now divide that period's two meters. Entity ids and statistics metadata are unchanged, so no migration is needed — but the long-term values recorded **before** this version are the old (lifetime) quantity, and the two are not comparable across the upgrade boundary.
-
-Successor to the `scripts/energy_monitor` code generator: instead of rendering
-~66 static YAML packages, it creates the same entities dynamically from an
-`energy_profiler:` config block, preserving the historical entity ids.
+🚧 Active development. All documented families are implemented: **power**, **energy**, **cost**,
+**self-sufficiency**, **cycles**, **standby** and **prosumption**.

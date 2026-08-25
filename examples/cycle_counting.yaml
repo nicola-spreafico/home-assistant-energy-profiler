@@ -17,6 +17,9 @@
 energy_profiler:
   defaults:
     energy_price: sensor.energy_price_purchase
+    # Optional: current usable battery energy in kWh. Each tracked appliance gets
+    # a binary sensor comparing this with its mean valid-cycle consumption.
+    battery_available_energy: sensor.battery_available_energy
     name_suffix: _em
 
   devices:

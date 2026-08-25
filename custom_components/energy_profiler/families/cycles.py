@@ -26,6 +26,7 @@ from ..const import (
     CONF_STATE,
     CONF_LIMITS,
     CONF_ENERGY_PRICE,
+    CONF_BATTERY_AVAILABLE_ENERGY,
     CONF_COST_PRECISION,
     CONF_FLOW_BATTERY,
     CONF_FLOW_SOLAR,
@@ -227,13 +228,17 @@ def build_binary_sensors(hass, device):
     if not run:
         return []
 
-    from ..binary_sensor import PowerRunningBinarySensor, TemplateRunningBinarySensor
+    from ..binary_sensor import (
+        BatteryCycleCoverageBinarySensor,
+        PowerRunningBinarySensor,
+        TemplateRunningBinarySensor,
+    )
 
     prefix = device["prefix"]
     slug = f"{prefix}_running"
 
     if run[CONF_TRIGGER] == "power":
-        return [
+        entities = [
             PowerRunningBinarySensor(
                 hass,
                 slug=slug,
@@ -244,12 +249,25 @@ def build_binary_sensors(hass, device):
                 off_delay=run[CONF_OFF_DELAY],
             )
         ]
+    else:
+        entities = [
+            TemplateRunningBinarySensor(
+                hass,
+                slug=slug,
+                state_template=run[CONF_STATE],
+                availability_template=run.get(CONF_AVAILABLE),
+            )
+        ]
 
-    return [
-        TemplateRunningBinarySensor(
-            hass,
-            slug=slug,
-            state_template=run[CONF_STATE],
-            availability_template=run.get(CONF_AVAILABLE),
+    battery_energy = device.get(CONF_BATTERY_AVAILABLE_ENERGY)
+    if device.get(CONF_CYCLE_TRACKING) is not None and battery_energy:
+        entities.append(
+            BatteryCycleCoverageBinarySensor(
+                hass,
+                slug=f"{prefix}_battery_can_cover_average_cycle",
+                battery_energy_source=battery_energy,
+                cycle_energy_source=f"sensor.{prefix}_cycles_energy_mean",
+                cycle_count_source=f"sensor.{prefix}_cycles_count_lifetime",
+            )
         )
-    ]
+    return entities
