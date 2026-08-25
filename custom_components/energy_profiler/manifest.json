@@ -1,7 +1,7 @@
 {
   "domain": "energy_profiler",
   "name": "Energy Profiler",
-  "after_dependencies": ["sensor"],
+  "after_dependencies": ["sensor", "solcast_solar"],
   "codeowners": ["@nicola-spreafico"],
   "config_flow": true,
   "dependencies": ["recorder", "utility_meter", "lean_utility_meter"],

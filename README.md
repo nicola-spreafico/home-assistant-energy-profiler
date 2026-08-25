@@ -33,6 +33,10 @@ That is a deliberate order of priorities, and it rests on one asymmetry: **prese
 > *"Does the battery contain enough usable energy to run one average
 > dishwasher cycle without needing the grid?"*
 
+> *"At what time will the battery contain enough energy for that cycle — and
+> according to the solar forecast and the house's current background load, when
+> is the first window in which the sun can power the whole run?"*
+
 > *"How much money does the TV burn per year just sitting in standby, and is
 > the bedroom A/C running longer per cycle than it used to?"*
 
@@ -95,6 +99,12 @@ Hard dependency on [lean_utility_meter](https://github.com/nicola-spreafico/home
 API used by this integration. Install it first; without it, Energy Profiler does
 not set up.
 
+Optional dependency on [Solcast PV Forecast](https://github.com/BJReplay/ha-solcast-solar),
+used only by the cycle solar-readiness timestamp. Energy Profiler deliberately
+standardizes that feature on Solcast because its detailed time-series forecast
+supplies the required accuracy and interval data. Without Solcast, omit
+`solcast_forecast`: every other profile and entity continues to work.
+
 ## Quick Start
 
 ### Only have a power sensor?
@@ -119,7 +129,7 @@ Then configure the recorder — this part is **not optional**: the period meters
 
 ## The levels
 
-A fully-equipped device exposes **220 entities** — which is a lot to meet all at once. So don't: the integration is built as a ladder, and every rung is useful on its own. Each level asks one question about what you already have, and answers with a specific set of sensors. (And the number is not a database problem — see [The entity count is not the number that matters](#the-entity-count-is-not-the-number-that-matters).)
+A fully-equipped device exposes **222 entities** — which is a lot to meet all at once. So don't: the integration is built as a ladder, and every rung is useful on its own. Each level asks one question about what you already have, and answers with a specific set of sensors. (And the number is not a database problem — see [The entity count is not the number that matters](#the-entity-count-is-not-the-number-that-matters).)
 
 | Level | You have… | You get | New | Total |
 | --- | --- | --- | --- | --- |
@@ -129,14 +139,14 @@ A fully-equipped device exposes **220 entities** — which is a lot to meet all 
 | **[4 — Solar vs battery](docs/levels/04-solar-battery.md)** | …and the battery discharge flow | how much was sunshine, how much was the battery | 18 | 59 |
 | **[5 — Running](docs/levels/05-running.md)** | a way to tell "on" from "off" | the whole block again, over running time only | 50 | 109 |
 | **[6 — Standby](docs/levels/06-standby.md)** | a way to spot idle draw | the whole block again, over vampire waste | 50 | 159 |
-| **[7 — Cycles](docs/levels/07-cycles.md)** | appliances that run in cycles | per-run energy, cost and solar share, plus battery coverage | 55 | 214 |
-| **[8 — Prosumption](docs/levels/08-prosumption.md)** | the house energy counters | how well production and consumption met, and a fair per-device leaderboard | 6 (+29 house) | 220 |
+| **[7 — Cycles](docs/levels/07-cycles.md)** | appliances that run in cycles | per-run analytics, battery coverage and battery/solar ready times | 57 | 216 |
+| **[8 — Prosumption](docs/levels/08-prosumption.md)** | the house energy counters | how well production and consumption met, and a fair per-device leaderboard | 6 (+29 house) | 222 |
 
 Counts assume the default `periods: [daily, monthly, yearly]` and every optional source configured; fewer options mean fewer entities. Level 8 is the only one whose count is mostly *house* entities rather than per-device ones — see below.
 
 **Levels 1–4 ask what you can measure.** Each optional source adds a sub-block: a price brings cost, the house grid and load flows bring the solar/grid split, a battery flow splits that again into panels versus battery. They also compose — a price *and* the flows together unlock savings and grid cost, which neither gives alone.
 
-**Levels 5–7 ask which slice you measure it over.** They mostly replicate the block you already built over a gated slice of the consumption. Teach the integration to tell running from idle and you get the same energy, cost and solar breakdown for running time and for standby waste, separately. For cycle-tracked appliances, an optional usable-battery-energy gauge also answers whether the battery currently contains at least one observed average cycle. That multiplication is exactly why the total reaches 214 — and why it is far less to learn than the number suggests.
+**Levels 5–7 ask which slice you measure it over.** They mostly replicate the block you already built over a gated slice of the consumption. Teach the integration to tell running from idle and you get the same energy, cost and solar breakdown for running time and for standby waste, separately. For cycle-tracked appliances, optional battery and forecast inputs also answer whether the battery contains one average cycle, when charging will get it there, and when forecast solar can continuously cover a run alongside the current house load. That multiplication is exactly why the total reaches 216 — and why it is far less to learn than the number suggests.
 
 **Level 8 turns the question around.** Levels 1–7 all look at where an appliance's energy came *from*. Level 8 looks at what happened to the energy you *produced* — a question that only exists at house level, since no appliance has a production of its own. It reads energy counters rather than the instantaneous flows, so it stands alone: you can have it without any of the others. What it gives back to the devices is a **baseline**, and with it the one thing per-device percentages cannot deliver on their own — a leaderboard that is fair to appliances which cannot be rescheduled.
 
@@ -189,6 +199,10 @@ energy_profiler:
       grid: sensor.grid_import_power
       battery: sensor.battery_discharge_power
     battery_available_energy: sensor.battery_available_energy  # current usable kWh; cycle estimate
+    battery_charge_power: sensor.battery_charge_power
+    solcast_forecast:
+      today: sensor.solcast_pv_forecast_forecast_today
+      tomorrow: sensor.solcast_pv_forecast_forecast_tomorrow
     energy_flows:                                # level 8: prosumption + leaderboard
       consumption: sensor.house_consumption_energy_total
       import: sensor.grid_import_energy_total

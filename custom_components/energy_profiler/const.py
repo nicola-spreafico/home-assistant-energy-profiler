@@ -9,6 +9,10 @@ CONF_DEVICES = "devices"
 # Shared defaults (were the generator's "globals")
 CONF_ENERGY_PRICE = "energy_price"                     # energyPriceEntityId
 CONF_BATTERY_AVAILABLE_ENERGY = "battery_available_energy"  # usable energy now (kWh)
+CONF_BATTERY_CHARGE_POWER = "battery_charge_power"          # charging power now (W)
+CONF_SOLCAST_FORECAST = "solcast_forecast"
+CONF_SOLCAST_TODAY = "today"
+CONF_SOLCAST_TOMORROW = "tomorrow"
 # The house power flows the per-device attribution is derived from. These are
 # *base* readings in W, the ones an inverter/meter integration already exposes —
 # the integration computes the shares itself, so no template is asked of the user.

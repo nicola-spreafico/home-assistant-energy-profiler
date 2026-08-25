@@ -17,6 +17,14 @@ energy_profiler:
       battery: sensor.battery_discharge_power
     # Current usable battery energy, in kWh; enables average-cycle coverage.
     battery_available_energy: sensor.battery_available_energy
+    # Current battery charging power (W): adds the battery-ready cycle timestamp.
+    battery_charge_power: sensor.battery_charge_power
+    # Solcast is required only for this timestamp. With power_flows.load, these
+    # add the first solar window able to cover one observed average cycle.
+    solcast_forecast:
+      today: sensor.solcast_pv_forecast_forecast_today
+      tomorrow: sensor.solcast_pv_forecast_forecast_tomorrow
+
     name_suffix: _em
     # Throttle live LTS updates fleet-wide (fewer upserts/hour than the 5-min
     # default; period boundaries are still written exactly).

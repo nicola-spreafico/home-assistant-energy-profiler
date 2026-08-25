@@ -19,7 +19,9 @@ energy_profiler:
     energy_price: sensor.energy_price_purchase
     # Optional: current usable battery energy in kWh. Each tracked appliance gets
     # a binary sensor comparing this with its mean valid-cycle consumption.
+    # Charging power adds the timestamp at which the current deficit will close.
     battery_available_energy: sensor.battery_available_energy
+    battery_charge_power: sensor.battery_charge_power
     name_suffix: _em
 
   devices:

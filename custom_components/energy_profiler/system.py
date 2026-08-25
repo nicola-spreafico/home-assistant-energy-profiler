@@ -26,6 +26,8 @@ from homeassistant.helpers.event import async_track_state_change_event
 from .const import (
     CONF_ENERGY_PRICE,
     CONF_BATTERY_AVAILABLE_ENERGY,
+    CONF_BATTERY_CHARGE_POWER,
+    CONF_SOLCAST_FORECAST,
     CONF_FLOW_BATTERY,
     CONF_FLOW_GRID,
     CONF_FLOW_SOLAR,
@@ -156,6 +158,8 @@ class ConfigurationSensor(SensorEntity):
             "devices": [device["prefix"] for device in self._devices],
             "energy_price": self._defaults.get(CONF_ENERGY_PRICE),
             "battery_available_energy": self._defaults.get(CONF_BATTERY_AVAILABLE_ENERGY),
+            "battery_charge_power": self._defaults.get(CONF_BATTERY_CHARGE_POWER),
+            "solcast_forecast": self._defaults.get(CONF_SOLCAST_FORECAST),
             "periods": self._defaults.get(CONF_PERIODS),
             "power_flows": dict(flows),
             "self_channels": resolved["channels"] if resolved else [],

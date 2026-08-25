@@ -160,11 +160,13 @@ Duration and derived:
 | `sensor.<p>_cycle_completed_costovertime` 📈 | €/h | Cost per hour of the last completed cycle |
 | `sensor.<p>_cycles_costovertime_mean` 📈 | €/h | Average cost per running hour across all valid cycles |
 
-Battery coverage estimate (only when `battery_available_energy` and cycle tracking are both configured):
+Cycle readiness estimates (each row is created only when its listed inputs and cycle tracking are configured):
 
 | Entity | Unit | Description |
 | --- | --- | --- |
-| `binary_sensor.<p>_battery_can_cover_average_cycle` 💤 | — | `on` when current usable battery kWh cover `…_cycles_energy_mean`. Unavailable without a valid non-zero cycle or readable inputs; attributes include both values, margin, average cycles covered and sample count |
+| `binary_sensor.<p>_battery_can_cover_average_cycle` 💤 | — | With `battery_available_energy`: `on` when current usable battery kWh cover `…_cycles_energy_mean`. Unavailable without a valid non-zero cycle or readable inputs |
+| `sensor.<p>_battery_ready_for_average_cycle_at` 💤 | timestamp | With `battery_available_energy` + `battery_charge_power`: linear ETA for the battery to contain one average cycle; unavailable while a deficit exists and the battery is not charging |
+| `sensor.<p>_solar_ready_for_average_cycle_at` 💤 | timestamp | With `solcast_forecast` + `power_flows.load`: first complete mean-cycle-duration Solcast window where PV covers the current rest-of-house baseline plus average cycle power |
 
 Cycle events (`energy_profiler_cycle_completed` / `_cycle_discarded`) and their payload are documented in [Level 7](levels/07-cycles.md#events).
 
@@ -207,11 +209,11 @@ Entity count for a fully-configured device with the default `[daily, monthly, ye
 | Power + total energy group | 59 | [1](levels/01-energy.md)–[4](levels/04-solar-battery.md) |
 | Running signal + running energy group | 49 | [5](levels/05-running.md) |
 | Standby gatekeeper, duration + standby energy group | 50 | [6](levels/06-standby.md) |
-| Cycle analytics + battery coverage estimate | 55 | [7](levels/07-cycles.md) |
+| Cycle analytics + readiness estimates | 57 | [7](levels/07-cycles.md) |
 | Status label | 1 | [5](levels/05-running.md)/[6](levels/06-standby.md) |
 | Baseline comparison (index + advantage) | 6 | [8](levels/08-prosumption.md) |
-| **Total** | **220** | |
+| **Total** | **222** | |
 
-94 of those are fixed and 46 scale with the number of configured periods. Without `battery_available_energy`, subtract one fixed entity; with `include_in_ranking: false`, omit the six public baseline-comparison meters (and their hidden live helpers).
+96 of those are fixed and 46 scale with the number of configured periods. Without `battery_available_energy`, subtract two fixed entities; without `battery_charge_power` or without `solcast_forecast` + `power_flows.load`, subtract the corresponding timestamp. With `include_in_ranking: false`, omit the six public baseline-comparison meters (and their hidden live helpers).
 
 The four global devices add **29 more entities altogether, once for the whole system** (14 without `production:`), plus the ones `power_flows` already brought.

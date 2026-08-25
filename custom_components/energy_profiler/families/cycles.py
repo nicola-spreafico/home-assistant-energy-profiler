@@ -27,7 +27,10 @@ from ..const import (
     CONF_LIMITS,
     CONF_ENERGY_PRICE,
     CONF_BATTERY_AVAILABLE_ENERGY,
+    CONF_BATTERY_CHARGE_POWER,
+    CONF_SOLCAST_FORECAST,
     CONF_COST_PRECISION,
+    CONF_FLOW_LOAD,
     CONF_FLOW_BATTERY,
     CONF_FLOW_SOLAR,
     DEFAULT_COST_PRECISION,
@@ -155,6 +158,43 @@ def build(hass, device):
     duration_mean = MeanSensor(hass, slug=f"{prefix}_cycles_duration_mean", total_entity=duration_acc.entity_id, count_entity=f"sensor.{count_lifetime}", unit="s", device_class=DURATION, icon="mdi:timer-outline")
     live_duration = CycleLiveDurationSensor(hass, slug=f"{prefix}_cycle_live_duration", start_snapshot=start_snap.entity_id, running_entity=running)
     entities += [duration_acc, completed_duration, duration_mean, live_duration]
+
+    cycle_energy_source = f"sensor.{prefix}_cycles_energy_mean"
+    cycle_duration_source = f"sensor.{prefix}_cycles_duration_mean"
+    cycle_count_source = f"sensor.{count_lifetime}"
+    battery_energy = device.get(CONF_BATTERY_AVAILABLE_ENERGY)
+    battery_charge_power = device.get(CONF_BATTERY_CHARGE_POWER)
+    if battery_energy and battery_charge_power:
+        from ..readiness import BatteryCycleReadyAtSensor
+
+        entities.append(
+            BatteryCycleReadyAtSensor(
+                hass,
+                slug=f"{prefix}_battery_ready_for_average_cycle_at",
+                battery_energy_source=battery_energy,
+                battery_charge_power_source=battery_charge_power,
+                cycle_energy_source=cycle_energy_source,
+                cycle_count_source=cycle_count_source,
+            )
+        )
+
+    solcast_forecast = device.get(CONF_SOLCAST_FORECAST)
+    house_load = flows.get(CONF_FLOW_LOAD) if flows else None
+    if solcast_forecast and house_load:
+        from ..readiness import SolarCycleReadyAtSensor
+
+        entities.append(
+            SolarCycleReadyAtSensor(
+                hass,
+                slug=f"{prefix}_solar_ready_for_average_cycle_at",
+                solcast_forecast=solcast_forecast,
+                house_load_source=house_load,
+                device_power_source=device[CONF_POWER],
+                cycle_energy_source=cycle_energy_source,
+                cycle_duration_source=cycle_duration_source,
+                cycle_count_source=cycle_count_source,
+            )
+        )
 
     # Self-sufficiency % (completed + mean over cycles + live), when applicable.
     completed_ss = None

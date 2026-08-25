@@ -13,6 +13,8 @@ Everything lives under a single `energy_profiler:` block: one global `defaults` 
 | `running:` block | the running **signal** (`binary_sensor.<prefix>_running`) plus the **running energy group** — the same stack as the total, gated on it |
 | `cycle_tracking:` (needs `running:`) | **cycles** family — per-run analytics: completed/live/mean values, counters, events |
 | `battery_available_energy` + `cycle_tracking:` | `binary_sensor.<prefix>_battery_can_cover_average_cycle` — whether usable battery kWh are at least the observed valid-cycle mean |
+| + `battery_charge_power` | `sensor.<prefix>_battery_ready_for_average_cycle_at` — when the battery will reach that energy at its current charging rate |
+| `solcast_forecast` + `power_flows.load` + `cycle_tracking:` | `sensor.<prefix>_solar_ready_for_average_cycle_at` — first Solcast window that can continuously cover the current house baseline plus one average cycle |
 | `standby:` (bool or trigger block) | the standby **signal** (`binary_sensor.<prefix>_standby`) plus the **standby energy group** — same stack, gated on it |
 | `running:` and/or `standby:` | also `sensor.<prefix>_status` — a presentation-only enum label (`running`/`standby`/`poweroff`/`poweron`) for dashboards |
 | `energy_flows:` with `consumption` + `import` | the **house self-sufficiency** and the **baseline**; with `power_flows` too, each device's `index` and `advantage` and the **leaderboard** |
@@ -34,6 +36,8 @@ Global values inherited by every device that does not override them.
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `battery_available_energy` | entity id | — | Current **usable** energy in the battery (kWh). With cycle tracking, enables the average-cycle coverage estimate |
+| `battery_charge_power` | entity id | — | Current battery **charging** power (W). With `battery_available_energy`, enables the battery-ready timestamp |
+| `solcast_forecast` | mapping | — | Solcast's today and tomorrow detailed-forecast entities. With `power_flows.load`, enables the solar-ready timestamp |
 | `energy_price` | entity id | — | Sensor with the current energy purchase price (€/kWh). Enables the **cost** family for all devices |
 | `power_flows` | mapping | — | The house flows in W the per-device split is derived from. See [Power flows](#power-flows-power_flows) below |
 | `energy_flows` | mapping | — | The house kWh counters the prosumption scores are built from. **No per-device form** — see [Energy flows](#energy-flows-energy_flows) below |
@@ -50,6 +54,8 @@ Global values inherited by every device that does not override them.
 | `name` | slug | ✔ | Device slug; with `name_suffix` it forms the prefix of every entity id (`washing_machine` → `sensor.washing_machine_em_…`) |
 | `power` | entity id | ✔ | The device's instantaneous power sensor (W) |
 | `battery_available_energy` | entity id or `null` | — | Per-device override of the default; `null` opts this device out of the battery coverage estimate |
+| `battery_charge_power` | entity id or `null` | — | Per-device override of the charging-power source; `null` omits the battery-ready timestamp |
+| `solcast_forecast` | mapping or `null` | — | Per-device override of the two Solcast entities; `null` omits the solar-ready timestamp |
 | `energy` | entity id | ✔ | The device's cumulative energy sensor (kWh). Resets and sensor swaps are tolerated: the integration accumulates only positive deltas into its own lifetime total |
 | `energy_price` | entity id or `null` | — | Per-device override of the default. Set `null` to opt this device **out** of the cost family even when a default is configured |
 | `power_flows` | mapping or `null` | — | Per-device override; `null` opts out of the split entirely. Replaced **wholesale**, never merged key by key — a half-inherited block would mix two houses' readings |
@@ -145,6 +151,43 @@ Use an entity that already accounts for the inverter's reserve/minimum state of 
 For each device with `running:` and `cycle_tracking:`, this enables `binary_sensor.<prefix>_battery_can_cover_average_cycle`. It compares the current usable battery kWh with `sensor.<prefix>_cycles_energy_mean`, which is preserved from valid completed cycles. The sensor is unavailable until at least one valid, non-zero cycle exists or whenever either input is unreadable. Its attributes expose the two operands, the energy margin, the number of average cycles covered and the valid-cycle sample count.
 
 The result is an estimate, not a reservation or guarantee: simultaneous house loads, inverter discharge-power limits, conversion losses and later changes in reserve can still make the grid intervene.
+
+### Battery-ready timestamp (`battery_charge_power`)
+
+Add the battery's live **charging power in W** alongside its usable energy:
+
+```yaml
+defaults:
+  battery_available_energy: sensor.battery_available_energy  # kWh
+  battery_charge_power: sensor.battery_charge_power          # W, positive while charging
+```
+
+This adds `sensor.<prefix>_battery_ready_for_average_cycle_at`. For a deficit of `D` kWh and a current charge rate of `P` W, its linear estimate is `now + D / (P / 1000)` hours. When the battery already contains the average cycle, the timestamp is now; when it is not charging, the entity is unavailable. The attributes expose the deficit, charge rate, ETA, sample count and a machine-readable `status`. It deliberately does not guess a future charge rate.
+
+### Solar-ready timestamp (`solcast_forecast`)
+
+[Solcast PV Forecast](https://github.com/BJReplay/ha-solcast-solar) is an **optional dependency**, required only for `sensor.<prefix>_solar_ready_for_average_cycle_at`. Without `solcast_forecast`, that entity is not created and every other Energy Profiler feature continues to work. The solar-readiness calculation deliberately supports only Solcast: it is selected for its precision and for the detailed interval series required to evaluate a complete appliance cycle, rather than a daily total or isolated power peak.
+
+```yaml
+defaults:
+  power_flows:
+    load: sensor.house_load_power
+    grid: sensor.grid_import_power
+  solcast_forecast:
+    today: sensor.solcast_pv_forecast_forecast_today
+    tomorrow: sensor.solcast_pv_forecast_forecast_tomorrow
+```
+
+Both entities are required. Energy Profiler reads Solcast's `detailedForecast` attribute and its `period_start` and `pv_estimate` fields directly; these names and the kW unit are fixed, not configurable. Home Assistant may localize the generated entity ids, so use the actual Today and Tomorrow forecast ids shown by your Solcast installation.
+
+This adds `sensor.<prefix>_solar_ready_for_average_cycle_at`. It computes the appliance's average cycle power as mean kWh divided by mean duration, freezes the rest-of-house baseline at `power_flows.load − the appliance's current power`, and finds the first continuous forecast window at least as long as the mean cycle where:
+
+```text
+forecast PV power >= current rest-of-house load + average cycle power
+```
+
+A single forecast peak is therefore not enough. If no complete window exists in the configured horizon, the entity is unavailable; its attributes still report `no_suitable_window_in_forecast`, the required power, assumed house baseline and forecast horizon. This remains an estimate: it models the appliance with its observed average power, not its unknown phase-by-phase power profile, and assumes the current background load stays unchanged.
+
 Nothing is created that would only ever read zero: no battery flow means no battery entities. With a single channel, `from_self` and that channel hold the same number and both exist — `from_self` is what the monetary view prices, the channel is the one named for what happened — but the channel *percentage* is not created, since it would duplicate self-sufficiency.
 
 If the flows are unreadable at a given tick, the whole delta is attributed to the grid. A broken sensor can understate your self-production; it can never inflate it, nor the savings computed from it.

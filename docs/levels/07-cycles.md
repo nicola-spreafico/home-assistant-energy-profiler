@@ -37,7 +37,8 @@ With **limits**, so implausible runs are discarded instead of polluting the mean
 ```
 
 A run outside the limits is recorded as discarded: counters, means and the `_cycle_completed_*` values are all left untouched — only `_cycle_validation_status` moves, so you can see it happened. Its energy still counts in the [running group](05-running.md), which is not cycle-aware.
-### Optional battery coverage
+
+### Optional battery and solar readiness
 
 Add a current usable-energy gauge in the shared defaults to ask whether the battery contains at least one observed average cycle:
 
@@ -46,8 +47,11 @@ energy_profiler:
   defaults:
     battery_available_energy: sensor.battery_available_energy  # kWh
 ```
+    battery_charge_power: sensor.battery_charge_power          # W
 
 This is a kWh gauge, not `power_flows.battery` (W), state of charge (%) or a cumulative charge/discharge counter. Prefer an entity that already excludes the inverter's protected reserve.
+
+Adding charging power enables the battery-ready timestamp. The solar-ready timestamp additionally needs the optional Solcast integration, `solcast_forecast` and `power_flows.load`; omitting them removes only that timestamp. The exact mapping is documented in [Configuration](../configuration.md#solar-ready-timestamp-solcast_forecast).
 
 ## What you get
 
@@ -103,15 +107,19 @@ Which metrics exist scales with the levels you configured:
 | `sensor.<p>_cycle_completed_costovertime` 📈 | €/h | Cost per hour of the last completed cycle ([L2](02-cost.md)) |
 | `sensor.<p>_cycles_costovertime_mean` 📈 | €/h | Average cost per running hour ([L2](02-cost.md)) |
 
-**Battery coverage estimate** (only with `battery_available_energy`):
+**Cycle readiness estimates** (each entity is gated by the inputs named below):
 
 | Entity | Unit | Description |
 | --- | --- | --- |
-| `binary_sensor.<p>_battery_can_cover_average_cycle` 💤 | — | `on` when current usable battery kWh ≥ `…_cycles_energy_mean`; unavailable until one valid non-zero cycle exists or an input is unreadable |
+| `binary_sensor.<p>_battery_can_cover_average_cycle` 💤 | — | With `battery_available_energy`: `on` when current usable battery kWh ≥ `…_cycles_energy_mean`; unavailable until one valid non-zero cycle exists or an input is unreadable |
+| `sensor.<p>_battery_ready_for_average_cycle_at` 💤 | timestamp | With `battery_available_energy` + `battery_charge_power`: when the current linear charge rate will erase the cycle-energy deficit |
+| `sensor.<p>_solar_ready_for_average_cycle_at` 💤 | timestamp | With `solcast_forecast` + `power_flows.load`: first Solcast window able to power a complete average cycle alongside the current house baseline |
 
 The attributes expose `battery_available_energy_kwh`, `average_cycle_energy_kwh`, `energy_margin_kwh`, `average_cycles_covered` and `valid_cycles`. The mean uses only valid completed cycles and survives restarts through the existing lifetime total and count. This is an estimate, not an energy reservation: concurrent loads, inverter discharge limits, losses and reserve changes may still require grid energy.
 
-**Inventory —** fully configured, with `[daily, monthly, yearly]`: **55 new entities** (214 cumulative) — 49 fixed plus 2 per period. Without `battery_available_energy`, subtract the one coverage binary sensor.
+The battery ETA uses the instantaneous charge rate and is unavailable while the battery has an energy deficit but is not charging. The solar ETA requires forecast power to stay above `current house load − current appliance power + average cycle power` for the whole mean cycle duration; a single peak is not sufficient. Its background-load assumption is frozen at the current reading. Both sensors expose their inputs, assumptions and machine-readable status as attributes; see [Configuration](../configuration.md#battery-ready-timestamp-battery_charge_power).
+
+**Inventory —** fully configured, with `[daily, monthly, yearly]`: **57 new entities** (216 cumulative) — 51 fixed plus 2 per period. Without `battery_available_energy`, subtract the coverage binary sensor and battery timestamp; without `battery_charge_power`, subtract the battery timestamp; without `solcast_forecast` + `power_flows.load`, subtract the solar timestamp.
 
 ## Restarting mid-cycle
 
@@ -145,7 +153,7 @@ cycle_count: 42              # valid cycles so far
 
 ## You are at the end of the path
 
-220 entities on a fully-equipped device across all eight levels, and only a handful of database rows per day — provided the recorder is configured as described in [Recorder Setup](../recorder.md).
+222 entities on a fully-equipped device across all eight levels, and only a handful of database rows per day — provided the recorder is configured as described in [Recorder Setup](../recorder.md).
 
 From here: the [entity reference](../entities.md) for looking anything up, [Configuration](../configuration.md) for every option in detail, and [Services & Actions](../services.md) for `reset` and the Lean maintenance services.
 

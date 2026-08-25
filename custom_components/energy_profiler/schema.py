@@ -24,6 +24,10 @@ from .const import (
     CONF_DEVICES,
     CONF_ENERGY_PRICE,
     CONF_BATTERY_AVAILABLE_ENERGY,
+    CONF_BATTERY_CHARGE_POWER,
+    CONF_SOLCAST_FORECAST,
+    CONF_SOLCAST_TODAY,
+    CONF_SOLCAST_TOMORROW,
     CONF_POWER_FLOWS,
     CONF_FLOW_LOAD,
     CONF_FLOW_GRID,
@@ -123,6 +127,14 @@ ENERGY_FLOWS_SCHEMA = vol.Schema(
     }
 )
 
+SOLCAST_FORECAST_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_SOLCAST_TODAY): cv.entity_id,
+        vol.Required(CONF_SOLCAST_TOMORROW): cv.entity_id,
+    }
+)
+
+
 # running: — the detection signal. Two trigger flavors: power threshold or template.
 RUNNING_SCHEMA = vol.Any(
     vol.Schema(
@@ -204,6 +216,8 @@ DEFAULTS_SCHEMA = vol.Schema(
         # Current usable battery energy (kWh), a gauge rather than a cumulative
         # flow. Cycle analytics compare it with their observed mean energy.
         vol.Optional(CONF_BATTERY_AVAILABLE_ENERGY): cv.entity_id,
+        vol.Optional(CONF_BATTERY_CHARGE_POWER): cv.entity_id,
+        vol.Optional(CONF_SOLCAST_FORECAST): SOLCAST_FORECAST_SCHEMA,
         vol.Optional(CONF_POWER_FLOWS): POWER_FLOWS_SCHEMA,
         # Defaults only, with no per-device counterpart: these are readings of
         # the whole house, and a device overriding them would be claiming a
@@ -231,6 +245,8 @@ DEVICE_SCHEMA = vol.Schema(
         # device out of the corresponding family even when a default is set.
         vol.Optional(CONF_ENERGY_PRICE): vol.Any(None, cv.entity_id),
         vol.Optional(CONF_BATTERY_AVAILABLE_ENERGY): vol.Any(None, cv.entity_id),
+        vol.Optional(CONF_BATTERY_CHARGE_POWER): vol.Any(None, cv.entity_id),
+        vol.Optional(CONF_SOLCAST_FORECAST): vol.Any(None, SOLCAST_FORECAST_SCHEMA),
         # Replaced wholesale, never merged key-by-key: a half-inherited flow block
         # would mix two houses' readings. `null` opts the device out of the split.
         vol.Optional(CONF_POWER_FLOWS): vol.Any(None, POWER_FLOWS_SCHEMA),
